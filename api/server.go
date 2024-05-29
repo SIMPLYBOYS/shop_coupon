@@ -18,6 +18,13 @@ type Server struct {
 	grabRequestChan       chan *struct{ UserId int }
 }
 
+const (
+	ReserveStartHour = 13
+	ReserveStartMin  = 59
+	GrabStartHour    = 14
+	GrabStartMin     = 11
+)
+
 var startReserveTime, endReserveTime, startGrabTime, endGrabTime int64
 var reservedUsersLock = &sync.Mutex{} // Lock for reserved users
 
@@ -38,9 +45,9 @@ func resetBloomFilterDaily(bfr *bloom.BloomFilter, bfg *bloom.BloomFilter) {
 func couponClockTimer() {
 	for {
 		time.Sleep(5 * time.Second)
-		startReserveTime = u.GetSpecificTime(14, 55, 0).Unix() // 22:55 ~ 23:00
+		startReserveTime = u.GetSpecificTime(ReserveStartHour, ReserveStartMin, 0).Unix() // 22:55 ~ 23:00
 		endReserveTime = startReserveTime + 5*60
-		startGrabTime = u.GetSpecificTime(15, 0, 0).Unix() // 23:00 ~ 23:01
+		startGrabTime = u.GetSpecificTime(GrabStartHour, GrabStartMin, 0).Unix() // 23:00 ~ 23:01
 		endGrabTime = startGrabTime + 60
 	}
 }

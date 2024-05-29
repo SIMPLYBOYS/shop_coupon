@@ -50,6 +50,7 @@ func main() {
 	// Start the server
 	err = server.Start(serverAddress)
 	if err != nil {
-		log.Fatal("cannot start server:", err)
+		log.Printf("Error starting server: %v", err)
+		return
 	}
 }
