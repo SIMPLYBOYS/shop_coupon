@@ -2,10 +2,11 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"errors"
 	"log"
-	"math/rand"
+	"math/big"
 	"net/http"
 	"strconv"
 	"sync"
@@ -43,12 +44,17 @@ func selectWinners(reservedUsers map[int]int, numWinners int) []int {
 	winners := make([]int, 0, numWinners)
 	remainingWeight := totalWeight
 	for len(winners) < numWinners {
-		target := rand.Intn(remainingWeight)
+		target, err := rand.Int(rand.Reader, big.NewInt(int64(remainingWeight)))
+		if err != nil {
+			// Handle the error appropriately
+			continue
+		}
+
 		j := 0
 		cumWeight := 0
 		for {
 			cumWeight += users[j].Weight
-			if cumWeight > target {
+			if cumWeight > int(target.Int64()) {
 				break
 			}
 			j++
@@ -204,6 +210,24 @@ func updateCouponsForWinners(store *db.Store, workPool chan struct{}, coupons []
 	}
 
 	wg.Wait()
+}
+
+// collectUnwinners collects the user IDs of the users who did not win
+func collectUnwinners(reservedUsers map[int]int, winners []int) []int {
+	var unwinners []int
+	for userId := range reservedUsers {
+		found := false
+		for _, winner := range winners {
+			if userId == winner {
+				found = true
+				break
+			}
+		}
+		if !found {
+			unwinners = append(unwinners, userId)
+		}
+	}
+	return unwinners
 }
 
 // handleGrabbing handles the grabbing process for the coupons
