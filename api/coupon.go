@@ -11,6 +11,7 @@ type getCouponRequest struct {
 }
 
 func (s *Server) getCoupon(ctx *gin.Context) {
+
 	var req getCouponRequest
 	if err := ctx.ShouldBindUri(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, errorResponse(err))

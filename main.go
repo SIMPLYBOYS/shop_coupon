@@ -29,8 +29,11 @@ var grabBloomFilter = bloom.NewWithEstimates(1000000, 0.001)
 var grabRequestChan = make(chan *struct{ UserId int }, maxConcurrentRequests)
 
 func main() {
+
 	// Open a connection to the database
+
 	dbPool, err := sql.Open(dbDriver, dbSource)
+
 	if err != nil {
 		log.Fatal("cannot connect to db:", err)
 	}

@@ -45,6 +45,7 @@ func resetBloomFilterDaily(bfr *bloom.BloomFilter, bfg *bloom.BloomFilter) {
 func couponClockTimer() {
 	for {
 		time.Sleep(5 * time.Second)
+
 		startReserveTime = u.GetSpecificTime(ReserveStartHour, ReserveStartMin, 0).Unix() // 22:55 ~ 23:00
 		endReserveTime = startReserveTime + 5*60
 		startGrabTime = u.GetSpecificTime(GrabStartHour, GrabStartMin, 0).Unix() // 23:00 ~ 23:01

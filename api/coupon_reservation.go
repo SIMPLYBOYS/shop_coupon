@@ -107,6 +107,7 @@ func (s *Server) createCouponReservation(ctx *gin.Context) {
 // generateCouponsForReservations generates coupons for the given reservations
 func generateCouponsForReservations(store *db.Store, reservations []db.CouponReservations, numCoupons int) int {
 	couponsGenerated := 0
+	var mu sync.Mutex // Mutex to protect couponsGenerated
 	tx, err := store.DB.Begin() // Start a transaction
 	if err != nil {
 		log.Println("generateCouponsForReservations error:", err)
@@ -127,7 +128,12 @@ func generateCouponsForReservations(store *db.Store, reservations []db.CouponRes
 			defer wg.Done()
 			for j := start; j < end; j++ {
 				reservation := reservations[j]
-				if couponsGenerated >= numCoupons {
+
+				mu.Lock()
+				reachedLimit := couponsGenerated >= numCoupons
+				mu.Unlock()
+
+				if reachedLimit {
 					err = store.Queries.MarkCouponReservationAsProcessed(context.Background(), reservation.ID)
 					if err != nil {
 						log.Println("generateCouponsForReservations error:", err)
@@ -147,7 +153,10 @@ func generateCouponsForReservations(store *db.Store, reservations []db.CouponRes
 					continue
 				}
 
+				mu.Lock()
 				couponsGenerated++
+				mu.Unlock()
+
 				err = store.Queries.MarkCouponReservationAsProcessed(context.Background(), reservation.ID)
 				if err != nil {
 					log.Println("generateCouponsForReservations error:", err)
