@@ -36,8 +36,8 @@ func resetBloomFilterDaily(bfr *bloom.BloomFilter, bfg *bloom.BloomFilter) {
 		next = time.Date(next.Year(), next.Month(), next.Day(), 23, 10, 0, 0, next.Location())
 		t := time.NewTimer(next.Sub(now))
 		<-t.C
-		bfr = bloom.NewWithEstimates(1000000, 0.001)
-		bfg = bloom.NewWithEstimates(1000000, 0.001)
+		bfr.ClearAll() // Clear the existing filter in place
+		bfg.ClearAll() // Clear the existing filter in place
 	}
 }
 

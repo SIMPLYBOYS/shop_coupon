@@ -105,13 +105,14 @@ func (s *Server) handleGrabRequest(ctx *gin.Context) {
 	select {
 	case s.grabRequestChan <- grabRequest: // Send the grab request to the channel
 		ctx.JSON(http.StatusOK, gin.H{"message": "grab request accepted"})
+		return
 	case <-time.After(3 * time.Second): // Timeout after 3 seconds
 		ctx.JSON(http.StatusRequestTimeout, gin.H{"error": "request timeout"})
+		return
 	default:
 		ctx.JSON(http.StatusTooManyRequests, gin.H{"error": "too many requests"})
+		return
 	}
-
-	ctx.JSON(http.StatusOK, reservation)
 }
 
 type User struct {
@@ -157,6 +158,7 @@ func receiveGrabRequests(grabRequestChan <-chan *struct {
 }
 
 // updateCouponsForWinners updates the coupons for winners
+// Note: Each coupon update is independent, so we don't use a transaction here.
 func updateCouponsForWinners(store *db.Store, workPool chan struct{}, coupons []db.Coupons, winners []int) {
 	var winnersMutex sync.Mutex
 	var wg sync.WaitGroup
@@ -174,13 +176,6 @@ func updateCouponsForWinners(store *db.Store, workPool chan struct{}, coupons []
 			}
 			winnersMutex.Unlock()
 
-			tx, err := store.DB.Begin() // Start a transaction
-			if err != nil {
-				log.Println("handleGrabbing error:", err)
-				return
-			}
-			defer tx.Rollback()
-
 			discount := coupons[index].Discount
 			if discount == "" {
 				discount = "0.25"
@@ -193,16 +188,9 @@ func updateCouponsForWinners(store *db.Store, workPool chan struct{}, coupons []
 				IsUsed:     true,
 				UserID:     sql.NullInt32{Int32: int32(userId), Valid: true},
 			}
-			_, err = store.Queries.UpdateCoupon(context.Background(), arg) // Update the coupon
+			_, err := store.Queries.UpdateCoupon(context.Background(), arg) // Update the coupon
 			if err != nil {
 				log.Println("handleGrabbing error:", err)
-				return
-			}
-
-			err = tx.Commit() // Commit the transaction
-			if err != nil {
-				log.Println("handleGrabbing error:", err)
-				return
 			}
 
 			workPool <- struct{}{} // Return the worker to the pool
