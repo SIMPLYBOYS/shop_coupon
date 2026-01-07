@@ -105,15 +105,11 @@ func (s *Server) createCouponReservation(ctx *gin.Context) {
 }
 
 // generateCouponsForReservations generates coupons for the given reservations
+// Note: Each coupon creation is independent, so we don't use a transaction here.
+// Using transactions across goroutines is problematic and not needed for this use case.
 func generateCouponsForReservations(store *db.Store, reservations []db.CouponReservations, numCoupons int) int {
 	couponsGenerated := 0
 	var mu sync.Mutex // Mutex to protect couponsGenerated
-	tx, err := store.DB.Begin() // Start a transaction
-	if err != nil {
-		log.Println("generateCouponsForReservations error:", err)
-		return 0
-	}
-	defer tx.Rollback()
 
 	var wg sync.WaitGroup
 	batchSize := 500 // Adjust batch size as needed
@@ -134,7 +130,7 @@ func generateCouponsForReservations(store *db.Store, reservations []db.CouponRes
 				mu.Unlock()
 
 				if reachedLimit {
-					err = store.Queries.MarkCouponReservationAsProcessed(context.Background(), reservation.ID)
+					err := store.Queries.MarkCouponReservationAsProcessed(context.Background(), reservation.ID)
 					if err != nil {
 						log.Println("generateCouponsForReservations error:", err)
 					}
@@ -147,7 +143,7 @@ func generateCouponsForReservations(store *db.Store, reservations []db.CouponRes
 					ExpiryDate: time.Now().AddDate(0, 0, 7), // Expiry date is 7 days from now
 				}
 
-				_, err = store.Queries.CreateCoupon(context.Background(), arg)
+				_, err := store.Queries.CreateCoupon(context.Background(), arg)
 				if err != nil {
 					log.Println("generateCouponsForReservations error:", err)
 					continue
@@ -166,12 +162,6 @@ func generateCouponsForReservations(store *db.Store, reservations []db.CouponRes
 	}
 
 	wg.Wait()
-
-	err = tx.Commit() // Commit the transaction
-	if err != nil {
-		log.Println("generateCouponsForReservations error:", err)
-		return couponsGenerated
-	}
 
 	return couponsGenerated
 }
