@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"log"
+	"os"
 
 	"github.com/SIMPLYBOYS/shopcoupon/api"
 	db "github.com/SIMPLYBOYS/shopcoupon/db/sqlc"
@@ -13,11 +14,19 @@ import (
 var dbPool *sql.DB
 
 const (
-	dbDriver              = "postgres"                                                                     // Database driver
-	dbSource              = "postgresql://root:mysecretpassword@localhost:5433/shopcoupon?sslmode=disable" // Database source
-	serverAddress         = "0.0.0.0:8080"                                                                 // Server address
-	maxConcurrentRequests = 1000                                                                           // Maximum concurrent requests
+	dbDriver              = "postgres"    // Database driver
+	serverAddress         = "0.0.0.0:8080" // Server address
+	maxConcurrentRequests = 1000           // Maximum concurrent requests
 )
+
+// getDBSource returns the database connection string from environment variable
+func getDBSource() string {
+	dbSource := os.Getenv("DATABASE_URL")
+	if dbSource == "" {
+		log.Fatal("DATABASE_URL environment variable is required")
+	}
+	return dbSource
+}
 
 // reservationBloomFilter is a Bloom filter used for storing reservations.
 var reservationBloomFilter = bloom.NewWithEstimates(1000000, 0.001)
@@ -31,8 +40,7 @@ var grabRequestChan = make(chan *struct{ UserId int }, maxConcurrentRequests)
 func main() {
 
 	// Open a connection to the database
-
-	dbPool, err := sql.Open(dbDriver, dbSource)
+	dbPool, err := sql.Open(dbDriver, getDBSource())
 
 	if err != nil {
 		log.Fatal("cannot connect to db:", err)
