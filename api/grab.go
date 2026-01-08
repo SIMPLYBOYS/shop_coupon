@@ -46,7 +46,7 @@ func selectWinners(reservedUsers map[int]int, numWinners int) []int {
 	for len(winners) < numWinners {
 		target, err := rand.Int(rand.Reader, big.NewInt(int64(remainingWeight)))
 		if err != nil {
-			// Handle the error appropriately
+			log.Printf("selectWinners rand.Int error: %v", err)
 			continue
 		}
 
