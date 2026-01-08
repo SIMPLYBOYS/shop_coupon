@@ -145,7 +145,11 @@ func generateCouponsForReservations(store *db.Store, reservations []db.CouponRes
 
 				_, err := store.Queries.CreateCoupon(context.Background(), arg)
 				if err != nil {
-					log.Println("generateCouponsForReservations error:", err)
+					log.Printf("generateCouponsForReservations CreateCoupon error for reservation %d: %v", reservation.ID, err)
+					// Mark as processed to prevent infinite retry loop
+					if markErr := store.Queries.MarkCouponReservationAsProcessed(context.Background(), reservation.ID); markErr != nil {
+						log.Printf("generateCouponsForReservations MarkAsProcessed error for reservation %d: %v", reservation.ID, markErr)
+					}
 					continue
 				}
 
@@ -155,7 +159,8 @@ func generateCouponsForReservations(store *db.Store, reservations []db.CouponRes
 
 				err = store.Queries.MarkCouponReservationAsProcessed(context.Background(), reservation.ID)
 				if err != nil {
-					log.Println("generateCouponsForReservations error:", err)
+					// Critical: coupon created but reservation not marked - potential duplicate risk
+					log.Printf("CRITICAL: coupon created but MarkAsProcessed failed for reservation %d: %v", reservation.ID, err)
 				}
 			}
 		}(i, end)
