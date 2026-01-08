@@ -26,16 +26,13 @@ func getDBSource() string {
 	return dbSource
 }
 
-// reservationBloomFilter is a Bloom filter used for storing reservations.
-var reservationBloomFilter = bloom.NewWithEstimates(1000000, 0.001)
-
-// grabBloomFilter is a Bloom filter used for storing grab requests.
-var grabBloomFilter = bloom.NewWithEstimates(1000000, 0.001)
-
-// grabRequestChan is a channel for handling grab requests.
-var grabRequestChan = make(chan *struct{ UserId int }, maxConcurrentRequests)
-
 func main() {
+	// Initialize Bloom filters for deduplication
+	reservationBloomFilter := bloom.NewWithEstimates(1000000, 0.001)
+	grabBloomFilter := bloom.NewWithEstimates(1000000, 0.001)
+
+	// Initialize channel for grab requests
+	grabRequestChan := make(chan *struct{ UserId int }, maxConcurrentRequests)
 
 	// Open a connection to the database
 	dbPool, err := sql.Open(dbDriver, getDBSource())
