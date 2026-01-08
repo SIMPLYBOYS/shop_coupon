@@ -11,8 +11,6 @@ import (
 	"github.com/willf/bloom"
 )
 
-var dbPool *sql.DB
-
 const (
 	dbDriver              = "postgres"    // Database driver
 	serverAddress         = "0.0.0.0:8080" // Server address
