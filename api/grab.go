@@ -136,7 +136,7 @@ func closeWorkerPool(workPool chan struct{}) {
 
 // isWithinGrabWindow checks if the current time is within the grab window
 func isWithinGrabWindow(now int64) bool {
-	return now >= startGrabTime && now < endGrabTime
+	return now >= couponTimeConfig.startGrabTime.Load() && now < couponTimeConfig.endGrabTime.Load()
 }
 
 // receiveGrabRequests receives grab requests from the channel

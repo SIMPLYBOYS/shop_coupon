@@ -24,7 +24,7 @@ func reservationListener(store *db.Store) {
 		now := time.Now().Unix()
 		time.Sleep(3 * time.Second)
 
-		if now < startReserveTime || now >= endReserveTime {
+		if now < couponTimeConfig.startReserveTime.Load() || now >= couponTimeConfig.endReserveTime.Load() {
 			continue
 		}
 

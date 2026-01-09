@@ -12,13 +12,13 @@ func specialTime(c *gin.Context) {
 	now := time.Now().Unix()
 
 	// Check if the current time is within the startReserveTime and endReserveTime range
-	if now >= startReserveTime && now < endReserveTime {
+	if now >= couponTimeConfig.startReserveTime.Load() && now < couponTimeConfig.endReserveTime.Load() {
 		c.Next()
 		return
 	}
 
 	// Check if the current time is within the startGrabTime and endGrabTime range
-	if now >= startGrabTime && now < endGrabTime {
+	if now >= couponTimeConfig.startGrabTime.Load() && now < couponTimeConfig.endGrabTime.Load() {
 		c.Next()
 		return
 	}

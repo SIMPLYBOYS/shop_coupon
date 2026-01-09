@@ -1,7 +1,7 @@
 package api
 
 import (
-	"sync"
+	"sync/atomic"
 	"time"
 
 	db "github.com/SIMPLYBOYS/shopcoupon/db/sqlc"
@@ -9,6 +9,17 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/willf/bloom"
 )
+
+// timeConfig holds time window configuration with atomic access for concurrency safety
+type timeConfig struct {
+	startReserveTime atomic.Int64
+	endReserveTime   atomic.Int64
+	startGrabTime    atomic.Int64
+	endGrabTime      atomic.Int64
+}
+
+// couponTimeConfig is the package-level time configuration with atomic access
+var couponTimeConfig = &timeConfig{}
 
 type Server struct {
 	store                 *db.Store
@@ -24,9 +35,6 @@ const (
 	GrabStartHour    = 14
 	GrabStartMin     = 11
 )
-
-var startReserveTime, endReserveTime, startGrabTime, endGrabTime int64
-var reservedUsersLock = &sync.Mutex{} // Lock for reserved users
 
 // resetBloomFilterDaily resets the Bloom filters for grab and reserve requests daily
 func resetBloomFilterDaily(bfr *bloom.BloomFilter, bfg *bloom.BloomFilter) {
@@ -46,10 +54,13 @@ func couponClockTimer() {
 	for {
 		time.Sleep(5 * time.Second)
 
-		startReserveTime = u.GetSpecificTime(ReserveStartHour, ReserveStartMin, 0).Unix() // 22:55 ~ 23:00
-		endReserveTime = startReserveTime + 5*60
-		startGrabTime = u.GetSpecificTime(GrabStartHour, GrabStartMin, 0).Unix() // 23:00 ~ 23:01
-		endGrabTime = startGrabTime + 60
+		startReserve := u.GetSpecificTime(ReserveStartHour, ReserveStartMin, 0).Unix()
+		couponTimeConfig.startReserveTime.Store(startReserve)
+		couponTimeConfig.endReserveTime.Store(startReserve + 5*60)
+
+		startGrab := u.GetSpecificTime(GrabStartHour, GrabStartMin, 0).Unix()
+		couponTimeConfig.startGrabTime.Store(startGrab)
+		couponTimeConfig.endGrabTime.Store(startGrab + 60)
 	}
 }
 
