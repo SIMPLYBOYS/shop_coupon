@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"sync/atomic"
 	"time"
 
@@ -27,6 +28,7 @@ type Server struct {
 	bloomFilterForGrab    *bloom.BloomFilter // Bloom filter for grab requests
 	bloomFilterForReserve *bloom.BloomFilter // Bloom filter for reservation requests
 	grabRequestChan       chan *struct{ UserId int }
+	numWorkers            int
 }
 
 const (
@@ -37,41 +39,54 @@ const (
 )
 
 // resetBloomFilterDaily resets the Bloom filters for grab and reserve requests daily
-func resetBloomFilterDaily(bfr *bloom.BloomFilter, bfg *bloom.BloomFilter) {
+func resetBloomFilterDaily(ctx context.Context, bfr *bloom.BloomFilter, bfg *bloom.BloomFilter) {
 	for {
 		now := time.Now()
 		next := now.Add(time.Hour * 24)
 		next = time.Date(next.Year(), next.Month(), next.Day(), 23, 10, 0, 0, next.Location())
 		t := time.NewTimer(next.Sub(now))
-		<-t.C
-		bfr.ClearAll() // Clear the existing filter in place
-		bfg.ClearAll() // Clear the existing filter in place
+		select {
+		case <-ctx.Done():
+			t.Stop()
+			return
+		case <-t.C:
+			bfr.ClearAll() // Clear the existing filter in place
+			bfg.ClearAll() // Clear the existing filter in place
+		}
 	}
 }
 
 // couponClockTimer updates the time windows for reservation and grab requests
-func couponClockTimer() {
+func couponClockTimer(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
 	for {
-		time.Sleep(5 * time.Second)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			startReserve := u.GetSpecificTime(ReserveStartHour, ReserveStartMin, 0).Unix()
+			couponTimeConfig.startReserveTime.Store(startReserve)
+			couponTimeConfig.endReserveTime.Store(startReserve + 5*60)
 
-		startReserve := u.GetSpecificTime(ReserveStartHour, ReserveStartMin, 0).Unix()
-		couponTimeConfig.startReserveTime.Store(startReserve)
-		couponTimeConfig.endReserveTime.Store(startReserve + 5*60)
-
-		startGrab := u.GetSpecificTime(GrabStartHour, GrabStartMin, 0).Unix()
-		couponTimeConfig.startGrabTime.Store(startGrab)
-		couponTimeConfig.endGrabTime.Store(startGrab + 60)
+			startGrab := u.GetSpecificTime(GrabStartHour, GrabStartMin, 0).Unix()
+			couponTimeConfig.startGrabTime.Store(startGrab)
+			couponTimeConfig.endGrabTime.Store(startGrab + 60)
+		}
 	}
 }
 
 // NewServer creates a new server instance
 func NewServer(store *db.Store, bfr *bloom.BloomFilter, bfg *bloom.BloomFilter, grabRC chan *struct{ UserId int }, numWorkers int) *Server {
-	go couponClockTimer()
-	go reservationListener(store)
-	go resetBloomFilterDaily(bfr, bfg)
-	go handleGrabbing(store, grabRC, numWorkers)
+	server := &Server{
+		store:                 store,
+		bloomFilterForReserve: bfr,
+		bloomFilterForGrab:    bfg,
+		grabRequestChan:       grabRC,
+		numWorkers:            numWorkers,
+	}
 
-	server := &Server{store: store, bloomFilterForReserve: bfr, bloomFilterForGrab: bfg, grabRequestChan: grabRC}
 	router := gin.Default()
 	router.GET("/user/:id", server.getUser)
 	router.GET("/coupon/:code", server.getCoupon)
@@ -89,7 +104,13 @@ func errorResponse(err error) gin.H {
 	return gin.H{"error": err.Error()}
 }
 
-// Start starts the server and listens on the specified address
-func (s *Server) Start(address string) error {
+// Start starts background goroutines and the HTTP server.
+// The context is used for graceful shutdown of background tasks.
+func (s *Server) Start(ctx context.Context, address string) error {
+	go couponClockTimer(ctx)
+	go reservationListener(ctx, s.store)
+	go resetBloomFilterDaily(ctx, s.bloomFilterForReserve, s.bloomFilterForGrab)
+	go handleGrabbing(ctx, s.store, s.grabRequestChan, s.numWorkers)
+
 	return s.router.Run(address)
 }

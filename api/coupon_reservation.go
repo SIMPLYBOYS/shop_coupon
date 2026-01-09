@@ -19,16 +19,21 @@ type getCouponReservationRequest struct {
 }
 
 // reservationListener listens for reservation requests and handles them
-func reservationListener(store *db.Store) {
+func reservationListener(ctx context.Context, store *db.Store) {
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
 	for {
-		now := time.Now().Unix()
-		time.Sleep(3 * time.Second)
-
-		if now < couponTimeConfig.startReserveTime.Load() || now >= couponTimeConfig.endReserveTime.Load() {
-			continue
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			now := time.Now().Unix()
+			if now < couponTimeConfig.startReserveTime.Load() || now >= couponTimeConfig.endReserveTime.Load() {
+				continue
+			}
+			handleReservations(store)
 		}
-
-		handleReservations(store)
 	}
 }
 

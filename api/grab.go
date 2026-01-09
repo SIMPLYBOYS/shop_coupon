@@ -219,7 +219,7 @@ func collectUnwinners(reservedUsers map[int]int, winners []int) []int {
 }
 
 // handleGrabbing handles the grabbing process for the coupons
-func handleGrabbing(store *db.Store, grabRequestChan <-chan *struct {
+func handleGrabbing(ctx context.Context, store *db.Store, grabRequestChan <-chan *struct {
 	UserId int
 }, numWorkers int) {
 
@@ -228,35 +228,40 @@ func handleGrabbing(store *db.Store, grabRequestChan <-chan *struct {
 
 	var coupons []db.Coupons
 	var err error
-	ctx := context.Background()
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 
 	for {
-		now := time.Now().Unix()
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			now := time.Now().Unix()
 
-		if !isWithinGrabWindow(now) { // Check if it's within the grab time window
-			time.Sleep(time.Second) // Avoid unnecessary looping
-			continue
-		}
-
-		if len(coupons) == 0 { // If there are no coupons, fetch available coupons
-			coupons, err = store.Queries.ListAvailableCoupons(ctx, time.Now())
-			if err != nil {
-				log.Println("handleGrabbing error:", err)
+			if !isWithinGrabWindow(now) { // Check if it's within the grab time window
 				continue
 			}
-		}
 
-		numCoupons := len(coupons)
-		log.Default().Printf("in handleGrabbing numCoupons: %d", numCoupons)
+			if len(coupons) == 0 { // If there are no coupons, fetch available coupons
+				coupons, err = store.Queries.ListAvailableCoupons(ctx, time.Now())
+				if err != nil {
+					log.Println("handleGrabbing error:", err)
+					continue
+				}
+			}
 
-		if numCoupons == 0 {
+			numCoupons := len(coupons)
+			log.Default().Printf("in handleGrabbing numCoupons: %d", numCoupons)
+
+			if numCoupons == 0 {
+				coupons = nil // Clear the coupon list for the next iteration
+				continue
+			}
+
+			reservedUsers := receiveGrabRequests(grabRequestChan, numCoupons) // Receive grab requests
+			winners := selectWinnersSimple(reservedUsers, numCoupons)
+			updateCouponsForWinners(store, workPool, coupons, winners)
 			coupons = nil // Clear the coupon list for the next iteration
-			continue
 		}
-
-		reservedUsers := receiveGrabRequests(grabRequestChan, numCoupons) // Receive grab requests
-		winners := selectWinnersSimple(reservedUsers, numCoupons)
-		updateCouponsForWinners(store, workPool, coupons, winners)
-		coupons = nil // Clear the coupon list for the next iteration
 	}
 }
