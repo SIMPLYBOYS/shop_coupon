@@ -3,12 +3,7 @@ package util
 import (
 	"math/rand"
 	"strings"
-	"time"
 )
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
 
 const alphabet = "abcdefghijklmnopqrstuvwxyz"
 
