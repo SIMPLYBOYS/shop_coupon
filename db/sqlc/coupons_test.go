@@ -14,9 +14,11 @@ import (
 // Import the package that defines the Coupon type
 
 func TestCreateCoupon(t *testing.T) {
+	code, err := u.GenerateCouponCode()
+	require.NoError(t, err)
 
 	arg := CreateCouponParams{
-		Code:    u.GenerateCouponCode(),
+		Code:    code,
 		Discount: "0.25",
 		ExpiryDate:  time.Now(),
 	}
@@ -29,8 +31,11 @@ func TestCreateCoupon(t *testing.T) {
 }
 
 func TestGeCoupon(t *testing.T) {
+	code, err := u.GenerateCouponCode()
+	require.NoError(t, err)
+
 	arg := CreateCouponParams{
-		Code:    u.GenerateCouponCode(),
+		Code:    code,
 		Discount: "0.25",
 		ExpiryDate:  time.Now(),
 	}
@@ -47,14 +52,19 @@ func TestGeCoupon(t *testing.T) {
 }
 
 func TestGetList(t *testing.T) {
+	code1, err := u.GenerateCouponCode()
+	require.NoError(t, err)
+	code2, err := u.GenerateCouponCode()
+	require.NoError(t, err)
+
 	args := []CreateCouponParams{
 		{
-			Code:       u.GenerateCouponCode(),
+			Code:       code1,
 			Discount:   "0.25",
 			ExpiryDate: time.Now(),
 		},
 		{
-			Code:       u.GenerateCouponCode(),
+			Code:       code2,
 			Discount:   "0.15",
 			ExpiryDate: time.Now(),
 		},
@@ -78,8 +88,11 @@ func TestGetList(t *testing.T) {
 }
 
 func TestUpdateCoupon(t *testing.T) {
+	code, err := u.GenerateCouponCode()
+	require.NoError(t, err)
+
 	arg := CreateCouponParams{
-		Code:    u.GenerateCouponCode(),
+		Code:    code,
 		Discount: "0.25",
 		ExpiryDate:  time.Now(),
 	}

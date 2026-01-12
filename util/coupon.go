@@ -4,17 +4,14 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"time"
 )
 
-func GenerateCouponCode() string {
+func GenerateCouponCode() (string, error) {
 	// Generate 8 random bytes
 	bytes := make([]byte, 8)
 	if _, err := rand.Read(bytes); err != nil {
-		// Handle error
-		log.Println("GenerateCouponCode error:", err)
-		return ""
+		return "", fmt.Errorf("generating coupon code: %w", err)
 	}
 
 	// Convert bytes to a hexadecimal string
@@ -26,6 +23,5 @@ func GenerateCouponCode() string {
 	// Construct the coupon code
 	couponCode := fmt.Sprintf("COUPON-%s-%d", randomHex, timestamp)
 
-	// Store into DB
-	return couponCode
+	return couponCode, nil
 }

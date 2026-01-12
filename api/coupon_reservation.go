@@ -142,13 +142,22 @@ func generateCouponsForReservations(store *db.Store, reservations []db.CouponRes
 					continue
 				}
 
+				couponCode, err := u.GenerateCouponCode()
+				if err != nil {
+					log.Printf("generateCouponsForReservations GenerateCouponCode error for reservation %d: %v", reservation.ID, err)
+					if markErr := store.Queries.MarkCouponReservationAsProcessed(context.Background(), reservation.ID); markErr != nil {
+						log.Printf("generateCouponsForReservations MarkAsProcessed error for reservation %d: %v", reservation.ID, markErr)
+					}
+					continue
+				}
+
 				arg := db.CreateCouponParams{
-					Code:       u.GenerateCouponCode(),      // Generate a unique coupon code
+					Code:       couponCode,
 					Discount:   "0.25",                      // 25% discount
 					ExpiryDate: time.Now().AddDate(0, 0, 7), // Expiry date is 7 days from now
 				}
 
-				_, err := store.Queries.CreateCoupon(context.Background(), arg)
+				_, err = store.Queries.CreateCoupon(context.Background(), arg)
 				if err != nil {
 					log.Printf("generateCouponsForReservations CreateCoupon error for reservation %d: %v", reservation.ID, err)
 					// Mark as processed to prevent infinite retry loop
