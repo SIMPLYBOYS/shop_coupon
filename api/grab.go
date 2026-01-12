@@ -41,24 +41,52 @@ func selectWinners(reservedUsers map[int]int, numWinners int) []int {
 		users = append(users, User{ID: userID, Weight: weight})
 	}
 
+	// Ensure we don't try to select more winners than available users
+	if numWinners > len(users) {
+		numWinners = len(users)
+	}
+
 	winners := make([]int, 0, numWinners)
 	remainingWeight := totalWeight
-	for len(winners) < numWinners {
-		target, err := rand.Int(rand.Reader, big.NewInt(int64(remainingWeight)))
+	const maxRetries = 3
+
+	for len(winners) < numWinners && len(users) > 0 {
+		// Ensure remainingWeight is positive before calling rand.Int
+		if remainingWeight <= 0 {
+			log.Printf("selectWinners: remainingWeight is %d, stopping selection", remainingWeight)
+			break
+		}
+
+		var target *big.Int
+		var err error
+		for retry := 0; retry < maxRetries; retry++ {
+			target, err = rand.Int(rand.Reader, big.NewInt(int64(remainingWeight)))
+			if err == nil {
+				break
+			}
+			log.Printf("selectWinners rand.Int error (retry %d/%d): %v", retry+1, maxRetries, err)
+		}
 		if err != nil {
-			log.Printf("selectWinners rand.Int error: %v", err)
-			continue
+			log.Printf("selectWinners: rand.Int failed after %d retries, selecting first available user", maxRetries)
+			// Fallback: select the first available user
+			target = big.NewInt(0)
 		}
 
 		j := 0
 		cumWeight := 0
-		for {
+		for j < len(users) {
 			cumWeight += users[j].Weight
 			if cumWeight > int(target.Int64()) {
 				break
 			}
 			j++
 		}
+
+		// Safety check: ensure j is within bounds
+		if j >= len(users) {
+			j = len(users) - 1
+		}
+
 		remainingWeight -= users[j].Weight
 		winners = append(winners, users[j].ID)
 		users[j], users[len(users)-1] = users[len(users)-1], users[j]
