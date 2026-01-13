@@ -60,9 +60,11 @@ jobs:
 
       - name: Post Review Comment to PR
         uses: actions/github-script@v7
+        env:
+          REPORT_CONTENT: ${{ steps.review.outputs.report_content }}
         with:
           script: |
-            const report = `${{ steps.review.outputs.report_content }}`;
+            const report = process.env.REPORT_CONTENT || '';
 
             if (report && !report.includes("没有发现明显问题")) {
               await github.rest.issues.createComment({
