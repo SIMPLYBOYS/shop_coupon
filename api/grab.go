@@ -187,7 +187,7 @@ func receiveGrabRequests(grabRequestChan <-chan *struct {
 
 // updateCouponsForWinners updates the coupons for winners
 // Note: Each coupon update is independent, so we don't use a transaction here.
-func updateCouponsForWinners(store *db.Store, workPool chan struct{}, coupons []db.Coupons, winners []int) {
+func updateCouponsForWinners(ctx context.Context, store *db.Store, workPool chan struct{}, coupons []db.Coupons, winners []int) {
 	var winnersMutex sync.Mutex
 	var wg sync.WaitGroup
 
@@ -216,7 +216,7 @@ func updateCouponsForWinners(store *db.Store, workPool chan struct{}, coupons []
 				IsUsed:     true,
 				UserID:     sql.NullInt32{Int32: int32(userId), Valid: true},
 			}
-			_, err := store.Queries.UpdateCoupon(context.Background(), arg) // Update the coupon
+			_, err := store.Queries.UpdateCoupon(ctx, arg) // Update the coupon
 			if err != nil {
 				log.Println("handleGrabbing error:", err)
 			}
@@ -288,7 +288,7 @@ func handleGrabbing(ctx context.Context, store *db.Store, grabRequestChan <-chan
 
 			reservedUsers := receiveGrabRequests(grabRequestChan, numCoupons) // Receive grab requests
 			winners := selectWinnersSimple(reservedUsers, numCoupons)
-			updateCouponsForWinners(store, workPool, coupons, winners)
+			updateCouponsForWinners(ctx, store, workPool, coupons, winners)
 			coupons = nil // Clear the coupon list for the next iteration
 		}
 	}
