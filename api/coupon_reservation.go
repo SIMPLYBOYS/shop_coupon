@@ -32,15 +32,15 @@ func reservationListener(ctx context.Context, store *db.Store) {
 			if now < couponTimeConfig.startReserveTime.Load() || now >= couponTimeConfig.endReserveTime.Load() {
 				continue
 			}
-			handleReservations(store)
+			handleReservations(ctx, store)
 		}
 	}
 }
 
 // handleReservations processes the coupon reservations
-func handleReservations(store *db.Store) {
+func handleReservations(ctx context.Context, store *db.Store) {
 	log.Default().Printf("handleReservations ===============>")
-	reservations, err := store.Queries.ListCouponReservations(context.Background())
+	reservations, err := store.Queries.ListCouponReservations(ctx)
 	if err != nil {
 		log.Println("handleReservations error:", err)
 		return
@@ -57,7 +57,7 @@ func handleReservations(store *db.Store) {
 			end = numReservations
 		}
 
-		couponsGenerated := generateCouponsForReservations(store, reservations[i:end], numCoupons)
+		couponsGenerated := generateCouponsForReservations(ctx, store, reservations[i:end], numCoupons)
 		numCoupons -= couponsGenerated
 	}
 }
@@ -112,7 +112,7 @@ func (s *Server) createCouponReservation(ctx *gin.Context) {
 // generateCouponsForReservations generates coupons for the given reservations
 // Note: Each coupon creation is independent, so we don't use a transaction here.
 // Using transactions across goroutines is problematic and not needed for this use case.
-func generateCouponsForReservations(store *db.Store, reservations []db.CouponReservations, numCoupons int) int {
+func generateCouponsForReservations(ctx context.Context, store *db.Store, reservations []db.CouponReservations, numCoupons int) int {
 	couponsGenerated := 0
 	var mu sync.Mutex // Mutex to protect couponsGenerated
 
@@ -135,7 +135,7 @@ func generateCouponsForReservations(store *db.Store, reservations []db.CouponRes
 				mu.Unlock()
 
 				if reachedLimit {
-					err := store.Queries.MarkCouponReservationAsProcessed(context.Background(), reservation.ID)
+					err := store.Queries.MarkCouponReservationAsProcessed(ctx, reservation.ID)
 					if err != nil {
 						log.Println("generateCouponsForReservations error:", err)
 					}
@@ -145,7 +145,7 @@ func generateCouponsForReservations(store *db.Store, reservations []db.CouponRes
 				couponCode, err := u.GenerateCouponCode()
 				if err != nil {
 					log.Printf("generateCouponsForReservations GenerateCouponCode error for reservation %d: %v", reservation.ID, err)
-					if markErr := store.Queries.MarkCouponReservationAsProcessed(context.Background(), reservation.ID); markErr != nil {
+					if markErr := store.Queries.MarkCouponReservationAsProcessed(ctx, reservation.ID); markErr != nil {
 						log.Printf("generateCouponsForReservations MarkAsProcessed error for reservation %d: %v", reservation.ID, markErr)
 					}
 					continue
@@ -157,11 +157,11 @@ func generateCouponsForReservations(store *db.Store, reservations []db.CouponRes
 					ExpiryDate: time.Now().AddDate(0, 0, 7), // Expiry date is 7 days from now
 				}
 
-				_, err = store.Queries.CreateCoupon(context.Background(), arg)
+				_, err = store.Queries.CreateCoupon(ctx, arg)
 				if err != nil {
 					log.Printf("generateCouponsForReservations CreateCoupon error for reservation %d: %v", reservation.ID, err)
 					// Mark as processed to prevent infinite retry loop
-					if markErr := store.Queries.MarkCouponReservationAsProcessed(context.Background(), reservation.ID); markErr != nil {
+					if markErr := store.Queries.MarkCouponReservationAsProcessed(ctx, reservation.ID); markErr != nil {
 						log.Printf("generateCouponsForReservations MarkAsProcessed error for reservation %d: %v", reservation.ID, markErr)
 					}
 					continue
@@ -171,7 +171,7 @@ func generateCouponsForReservations(store *db.Store, reservations []db.CouponRes
 				couponsGenerated++
 				mu.Unlock()
 
-				err = store.Queries.MarkCouponReservationAsProcessed(context.Background(), reservation.ID)
+				err = store.Queries.MarkCouponReservationAsProcessed(ctx, reservation.ID)
 				if err != nil {
 					// Critical: coupon created but reservation not marked - potential duplicate risk
 					log.Printf("CRITICAL: coupon created but MarkAsProcessed failed for reservation %d: %v", reservation.ID, err)
