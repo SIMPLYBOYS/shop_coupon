@@ -1,6 +1,8 @@
 package api
 
 import (
+	"errors"
+	"log"
 	"math"
 	"net/http"
 	"strconv"
@@ -10,13 +12,13 @@ import (
 )
 
 const (
-	// AuthUserIDKey is the context key for authenticated user ID
-	// This is package-private to avoid key collisions with other packages
-	AuthUserIDKey = "api_auth_user_id"
+	// authUserIDKey is the context key for authenticated user ID (package-private)
+	authUserIDKey = "api_auth_user_id"
 )
 
 // authMiddleware validates the X-User-ID header and stores the user ID in context
-// In production, this should validate a JWT token or session instead
+// FIXME: This is a simplified auth for development. In production, replace with
+// proper authentication using JWT tokens, sessions, or OAuth.
 func authMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userIDStr := c.GetHeader("X-User-ID")
@@ -33,9 +35,26 @@ func authMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		c.Set(AuthUserIDKey, int32(userID))
+		c.Set(authUserIDKey, int32(userID))
 		c.Next()
 	}
+}
+
+// getUserIDFromContext extracts the authenticated user ID from the gin context.
+// Returns the user ID and nil error on success, or 0 and an error if not found or invalid.
+func getUserIDFromContext(ctx *gin.Context) (int32, error) {
+	authUserID, exists := ctx.Get(authUserIDKey)
+	if !exists {
+		return 0, errors.New("unauthorized")
+	}
+
+	userID, ok := authUserID.(int32)
+	if !ok {
+		log.Printf("ERROR: invalid user ID type in context: %T", authUserID)
+		return 0, errors.New("internal server error")
+	}
+
+	return userID, nil
 }
 
 // specialTime is a middleware function that checks if the current time falls within

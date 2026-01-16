@@ -71,16 +71,13 @@ func (s *Server) getCouponReservation(ctx *gin.Context) {
 	}
 
 	// Authorization check: ensure user can only access their own reservation
-	authUserID, exists := ctx.Get(AuthUserIDKey)
-	if !exists {
-		ctx.JSON(http.StatusUnauthorized, errorResponse(errors.New("unauthorized")))
-		return
-	}
-
-	userID, ok := authUserID.(int32)
-	if !ok {
-		log.Printf("ERROR: invalid user ID type in context: %T", authUserID)
-		ctx.JSON(http.StatusInternalServerError, errorResponse(errors.New("internal server error")))
+	userID, err := getUserIDFromContext(ctx)
+	if err != nil {
+		if err.Error() == "unauthorized" {
+			ctx.JSON(http.StatusUnauthorized, errorResponse(err))
+		} else {
+			ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+		}
 		return
 	}
 

@@ -2,7 +2,6 @@ package api
 
 import (
 	"errors"
-	"log"
 	"net/http"
 
 	db "github.com/SIMPLYBOYS/shopcoupon/db/sqlc"
@@ -21,20 +20,15 @@ func (s *Server) getUser(ctx *gin.Context) {
 	}
 
 	// Authorization check: ensure user can only access their own data
-	authUserID, exists := ctx.Get(AuthUserIDKey)
-	if !exists {
-		ctx.JSON(http.StatusUnauthorized, errorResponse(errors.New("unauthorized")))
+	userID, err := getUserIDFromContext(ctx)
+	if err != nil {
+		if err.Error() == "unauthorized" {
+			ctx.JSON(http.StatusUnauthorized, errorResponse(err))
+		} else {
+			ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+		}
 		return
 	}
-
-	userID, ok := authUserID.(int32)
-	if !ok {
-		log.Printf("ERROR: invalid user ID type in context: %T", authUserID)
-		ctx.JSON(http.StatusInternalServerError, errorResponse(errors.New("internal server error")))
-		return
-	}
-
-	log.Printf("getUser request: id=%d, authUserID=%d", req.ID, userID)
 
 	if userID != req.ID {
 		ctx.JSON(http.StatusForbidden, errorResponse(errors.New("access denied")))
