@@ -88,12 +88,22 @@ func NewServer(store *db.Store, bfr *bloom.BloomFilter, bfg *bloom.BloomFilter, 
 	}
 
 	router := gin.Default()
-	router.GET("/user/:id", server.getUser)
+
+	// Public routes (no authentication required)
 	router.GET("/coupon/:code", server.getCoupon)
-	router.GET("/reservation/:user_id", server.getCouponReservation)
+	router.POST("/user", server.createUser)
+
+	// Authenticated routes (require valid X-User-ID header)
+	authenticated := router.Group("/", authMiddleware())
+	{
+		authenticated.GET("/user/:id", server.getUser)
+		authenticated.GET("/reservation/:user_id", server.getCouponReservation)
+	}
+
+	// Time-restricted routes (only available during special time windows)
 	router.POST("/reserve", specialTime, server.createCouponReservation)
 	router.POST("/grab", specialTime, server.handleGrabRequest)
-	router.POST("/user", server.createUser)
+
 	server.router = router
 
 	return server

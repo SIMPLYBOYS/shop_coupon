@@ -1,7 +1,7 @@
 package api
 
 import (
-	"log"
+	"errors"
 	"net/http"
 
 	db "github.com/SIMPLYBOYS/shopcoupon/db/sqlc"
@@ -9,7 +9,7 @@ import (
 )
 
 type getUserRequest struct {
-	ID int `uri:"id" binding:"required,min=1"`
+	ID int32 `uri:"id" binding:"required,min=1"`
 }
 
 func (s *Server) getUser(ctx *gin.Context) {
@@ -19,9 +19,23 @@ func (s *Server) getUser(ctx *gin.Context) {
 		return
 	}
 
-	log.Printf("req: %v", req)
+	// Authorization check: ensure user can only access their own data
+	userID, err := getUserIDFromContext(ctx)
+	if err != nil {
+		if err.Error() == "unauthorized" {
+			ctx.JSON(http.StatusUnauthorized, errorResponse(err))
+		} else {
+			ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+		}
+		return
+	}
 
-	user, err := s.store.GetUser(ctx, int32(req.ID))
+	if userID != req.ID {
+		ctx.JSON(http.StatusForbidden, errorResponse(errors.New("access denied")))
+		return
+	}
+
+	user, err := s.store.GetUser(ctx, req.ID)
 
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
