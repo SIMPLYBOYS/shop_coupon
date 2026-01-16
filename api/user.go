@@ -20,8 +20,6 @@ func (s *Server) getUser(ctx *gin.Context) {
 		return
 	}
 
-	log.Printf("req: %v", req)
-
 	// Authorization check: ensure user can only access their own data
 	authUserID, exists := ctx.Get(AuthUserIDKey)
 	if !exists {
@@ -29,8 +27,16 @@ func (s *Server) getUser(ctx *gin.Context) {
 		return
 	}
 
-	if authUserID.(int32) != int32(req.ID) {
-		ctx.JSON(http.StatusForbidden, errorResponse(errors.New("access denied: cannot access other user's data")))
+	userID, ok := authUserID.(int32)
+	if !ok {
+		ctx.JSON(http.StatusInternalServerError, errorResponse(errors.New("invalid user ID in context")))
+		return
+	}
+
+	log.Printf("req: %v, authUserID: %v", req, userID)
+
+	if userID != int32(req.ID) {
+		ctx.JSON(http.StatusForbidden, errorResponse(errors.New("access denied")))
 		return
 	}
 

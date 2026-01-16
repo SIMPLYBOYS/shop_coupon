@@ -23,7 +23,7 @@ func authMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		userID, err := strconv.Atoi(userIDStr)
+		userID, err := strconv.ParseInt(userIDStr, 10, 32)
 		if err != nil || userID < 1 {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid X-User-ID header"})
 			return
