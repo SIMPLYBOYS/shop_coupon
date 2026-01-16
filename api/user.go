@@ -21,7 +21,7 @@ func (s *Server) getUser(ctx *gin.Context) {
 	}
 
 	// Authorization check: ensure user can only access their own data
-	authUserID, exists := ctx.Get(string(AuthUserIDKey))
+	authUserID, exists := ctx.Get(AuthUserIDKey)
 	if !exists {
 		ctx.JSON(http.StatusUnauthorized, errorResponse(errors.New("unauthorized")))
 		return

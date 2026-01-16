@@ -9,12 +9,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// contextKey is a custom type for context keys to avoid collisions
-type contextKey string
-
 const (
 	// AuthUserIDKey is the context key for authenticated user ID
-	AuthUserIDKey contextKey = "auth_user_id"
+	// This is package-private to avoid key collisions with other packages
+	AuthUserIDKey = "api_auth_user_id"
 )
 
 // authMiddleware validates the X-User-ID header and stores the user ID in context
@@ -27,13 +25,15 @@ func authMiddleware() gin.HandlerFunc {
 			return
 		}
 
+		// Parse as int64 and validate range to prevent overflow when converting to int32
+		// int32 is used because database user IDs are stored as 32-bit integers
 		userID, err := strconv.ParseInt(userIDStr, 10, 64)
 		if err != nil || userID < 1 || userID > math.MaxInt32 {
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid X-User-ID header"})
 			return
 		}
 
-		c.Set(string(AuthUserIDKey), int32(userID))
+		c.Set(AuthUserIDKey, int32(userID))
 		c.Next()
 	}
 }

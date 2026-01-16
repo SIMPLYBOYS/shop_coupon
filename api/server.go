@@ -88,9 +88,10 @@ func NewServer(store *db.Store, bfr *bloom.BloomFilter, bfg *bloom.BloomFilter, 
 	}
 
 	router := gin.Default()
-	router.GET("/user/:id", authMiddleware(), server.getUser)
+	auth := authMiddleware()
+	router.GET("/user/:id", auth, server.getUser)
 	router.GET("/coupon/:code", server.getCoupon)
-	router.GET("/reservation/:user_id", server.getCouponReservation)
+	router.GET("/reservation/:user_id", auth, server.getCouponReservation)
 	router.POST("/reserve", specialTime, server.createCouponReservation)
 	router.POST("/grab", specialTime, server.handleGrabRequest)
 	router.POST("/user", server.createUser)
