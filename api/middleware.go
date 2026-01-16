@@ -1,10 +1,38 @@
 package api
 
 import (
+	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+const (
+	// AuthUserIDKey is the context key for authenticated user ID
+	AuthUserIDKey = "auth_user_id"
+)
+
+// authMiddleware validates the X-User-ID header and stores the user ID in context
+// In production, this should validate a JWT token or session instead
+func authMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userIDStr := c.GetHeader("X-User-ID")
+		if userIDStr == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing X-User-ID header"})
+			return
+		}
+
+		userID, err := strconv.Atoi(userIDStr)
+		if err != nil || userID < 1 {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid X-User-ID header"})
+			return
+		}
+
+		c.Set(AuthUserIDKey, int32(userID))
+		c.Next()
+	}
+}
 
 // specialTime is a middleware function that checks if the current time falls within
 // the specified time windows for reservation and grab requests

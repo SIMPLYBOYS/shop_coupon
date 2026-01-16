@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"log"
 	"net/http"
 
@@ -20,6 +21,18 @@ func (s *Server) getUser(ctx *gin.Context) {
 	}
 
 	log.Printf("req: %v", req)
+
+	// Authorization check: ensure user can only access their own data
+	authUserID, exists := ctx.Get(AuthUserIDKey)
+	if !exists {
+		ctx.JSON(http.StatusUnauthorized, errorResponse(errors.New("unauthorized")))
+		return
+	}
+
+	if authUserID.(int32) != int32(req.ID) {
+		ctx.JSON(http.StatusForbidden, errorResponse(errors.New("access denied: cannot access other user's data")))
+		return
+	}
 
 	user, err := s.store.GetUser(ctx, int32(req.ID))
 
