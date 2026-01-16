@@ -10,7 +10,7 @@ import (
 )
 
 type getUserRequest struct {
-	ID int `uri:"id" binding:"required,min=1"`
+	ID int32 `uri:"id" binding:"required,min=1"`
 }
 
 func (s *Server) getUser(ctx *gin.Context) {
@@ -21,7 +21,7 @@ func (s *Server) getUser(ctx *gin.Context) {
 	}
 
 	// Authorization check: ensure user can only access their own data
-	authUserID, exists := ctx.Get(AuthUserIDKey)
+	authUserID, exists := ctx.Get(string(AuthUserIDKey))
 	if !exists {
 		ctx.JSON(http.StatusUnauthorized, errorResponse(errors.New("unauthorized")))
 		return
@@ -29,18 +29,19 @@ func (s *Server) getUser(ctx *gin.Context) {
 
 	userID, ok := authUserID.(int32)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(errors.New("invalid user ID in context")))
+		log.Printf("ERROR: invalid user ID type in context: %T", authUserID)
+		ctx.JSON(http.StatusInternalServerError, errorResponse(errors.New("internal server error")))
 		return
 	}
 
-	log.Printf("req: %v, authUserID: %v", req, userID)
+	log.Printf("getUser request: id=%d, authUserID=%d", req.ID, userID)
 
-	if userID != int32(req.ID) {
+	if userID != req.ID {
 		ctx.JSON(http.StatusForbidden, errorResponse(errors.New("access denied")))
 		return
 	}
 
-	user, err := s.store.GetUser(ctx, int32(req.ID))
+	user, err := s.store.GetUser(ctx, req.ID)
 
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
