@@ -24,11 +24,15 @@ const (
 	zeroUserID        = "0"
 )
 
+func init() {
+	// Set gin to test mode once for all tests in this package
+	gin.SetMode(gin.TestMode)
+}
+
 // setupAuthTestRouter creates a test router with auth middleware and a handler
 // that mimics the authorization logic of getCouponReservation.
 // This tests the auth middleware + authorization check flow without database dependencies.
 func setupAuthTestRouter() *gin.Engine {
-	gin.SetMode(gin.TestMode)
 	router := gin.New()
 
 	authenticated := router.Group("/", authMiddleware())
@@ -42,7 +46,7 @@ func setupAuthTestRouter() *gin.Engine {
 
 			userID, err := getUserIDFromContext(c)
 			if err != nil {
-				if err.Error() == "unauthorized" {
+				if errors.Is(err, ErrUnauthorized) {
 					c.JSON(http.StatusUnauthorized, errorResponse(err))
 				} else {
 					c.JSON(http.StatusInternalServerError, errorResponse(err))
@@ -138,6 +142,61 @@ func TestGetCouponReservation_Authorization(t *testing.T) {
 
 			require.Equal(t, tc.expectedStatus, recorder.Code)
 			require.Contains(t, recorder.Body.String(), tc.expectedError)
+		})
+	}
+}
+
+// TestGetCouponReservation_URIValidation tests that invalid URI parameters
+// are properly rejected with appropriate error responses.
+func TestGetCouponReservation_URIValidation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		userIDHeader   string
+		requestUserID  string
+		expectedStatus int
+	}{
+		{
+			name:           "invalid user_id in URI returns 400",
+			userIDHeader:   validUserID,
+			requestUserID:  "invalid",
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "negative user_id in URI returns 400",
+			userIDHeader:   validUserID,
+			requestUserID:  "-1",
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "zero user_id in URI returns 400",
+			userIDHeader:   validUserID,
+			requestUserID:  "0",
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "float user_id in URI returns 400",
+			userIDHeader:   validUserID,
+			requestUserID:  "1.5",
+			expectedStatus: http.StatusBadRequest,
+		},
+	}
+
+	router := setupAuthTestRouter()
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			req, err := http.NewRequest(http.MethodGet, "/reservation/"+tc.requestUserID, nil)
+			require.NoError(t, err)
+			req.Header.Set("X-User-ID", tc.userIDHeader)
+
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, req)
+
+			require.Equal(t, tc.expectedStatus, recorder.Code)
 		})
 	}
 }
@@ -245,8 +304,6 @@ func TestAuthMiddleware(t *testing.T) {
 		},
 	}
 
-	gin.SetMode(gin.TestMode)
-
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -276,16 +333,15 @@ func TestAuthMiddleware(t *testing.T) {
 // the authenticated user ID from the Gin context.
 func TestGetUserIDFromContext(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
 
-	t.Run("returns error when user ID not in context", func(t *testing.T) {
+	t.Run("returns ErrUnauthorized when user ID not in context", func(t *testing.T) {
 		t.Parallel()
 		c, _ := gin.CreateTestContext(httptest.NewRecorder())
 
 		userID, err := getUserIDFromContext(c)
 
 		require.Error(t, err)
-		require.Equal(t, "unauthorized", err.Error())
+		require.True(t, errors.Is(err, ErrUnauthorized))
 		require.Equal(t, int32(0), userID)
 	})
 
@@ -300,7 +356,7 @@ func TestGetUserIDFromContext(t *testing.T) {
 		require.Equal(t, int32(42), userID)
 	})
 
-	t.Run("returns error when user ID has wrong type", func(t *testing.T) {
+	t.Run("returns ErrInternalServerError when user ID has wrong type", func(t *testing.T) {
 		t.Parallel()
 		c, _ := gin.CreateTestContext(httptest.NewRecorder())
 		c.Set(authUserIDKey, "not-an-int")
@@ -308,7 +364,7 @@ func TestGetUserIDFromContext(t *testing.T) {
 		userID, err := getUserIDFromContext(c)
 
 		require.Error(t, err)
-		require.Equal(t, "internal server error", err.Error())
+		require.True(t, errors.Is(err, ErrInternalServerError))
 		require.Equal(t, int32(0), userID)
 	})
 
