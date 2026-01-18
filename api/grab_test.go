@@ -100,11 +100,11 @@ func TestGrabEndpoint_Authentication(t *testing.T) {
 		},
 	}
 
-	router := setupAuthTimeRestrictedTestRouter()
-
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
+			router := setupAuthTimeRestrictedTestRouter()
 
 			body, err := json.Marshal(tc.requestBody)
 			require.NoError(t, err)
@@ -176,11 +176,11 @@ func TestReserveEndpoint_Authentication(t *testing.T) {
 		},
 	}
 
-	router := setupAuthTimeRestrictedTestRouter()
-
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
+			router := setupAuthTimeRestrictedTestRouter()
 
 			body, err := json.Marshal(tc.requestBody)
 			require.NoError(t, err)
@@ -208,8 +208,6 @@ func TestReserveEndpoint_Authentication(t *testing.T) {
 // validate the request body.
 func TestTimeRestrictedEndpoints_InvalidRequestBody(t *testing.T) {
 	t.Parallel()
-
-	router := setupAuthTimeRestrictedTestRouter()
 
 	tests := []struct {
 		name        string
@@ -252,6 +250,8 @@ func TestTimeRestrictedEndpoints_InvalidRequestBody(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
+			router := setupAuthTimeRestrictedTestRouter()
+
 			req, err := http.NewRequest(http.MethodPost, tc.endpoint, bytes.NewBufferString(tc.requestBody))
 			require.NoError(t, err)
 			req.Header.Set("Content-Type", "application/json")
@@ -261,6 +261,134 @@ func TestTimeRestrictedEndpoints_InvalidRequestBody(t *testing.T) {
 			router.ServeHTTP(recorder, req)
 
 			require.Equal(t, http.StatusBadRequest, recorder.Code)
+		})
+	}
+}
+
+// TestBoundaryValues_Int32Max tests that endpoints handle int32 max value correctly.
+func TestBoundaryValues_Int32Max(t *testing.T) {
+	t.Parallel()
+
+	const int32Max = 2147483647
+
+	tests := []struct {
+		name           string
+		endpoint       string
+		userIDHeader   string
+		requestBody    map[string]interface{}
+		expectedStatus int
+	}{
+		{
+			name:           "grab with int32 max user ID",
+			endpoint:       "/grab",
+			userIDHeader:   "2147483647",
+			requestBody:    map[string]interface{}{"user_id": int32Max},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "reserve with int32 max user ID",
+			endpoint:       "/reserve",
+			userIDHeader:   "2147483647",
+			requestBody:    map[string]interface{}{"user_id": int32Max},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "auth header exceeds int32 max returns 400",
+			endpoint:       "/grab",
+			userIDHeader:   "2147483648", // int32 max + 1
+			requestBody:    map[string]interface{}{"user_id": 1},
+			expectedStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			router := setupAuthTimeRestrictedTestRouter()
+
+			body, err := json.Marshal(tc.requestBody)
+			require.NoError(t, err)
+
+			req, err := http.NewRequest(http.MethodPost, tc.endpoint, bytes.NewBuffer(body))
+			require.NoError(t, err)
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-User-ID", tc.userIDHeader)
+
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, req)
+
+			require.Equal(t, tc.expectedStatus, recorder.Code)
+		})
+	}
+}
+
+// TestCheckUserAuthorization tests the checkUserAuthorization helper function.
+func TestCheckUserAuthorization(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		setupContext    func(c *gin.Context)
+		requestedUserID int32
+		expectError     bool
+		expectedStatus  int
+	}{
+		{
+			name: "authorized - matching user IDs",
+			setupContext: func(c *gin.Context) {
+				c.Set("api_auth_user_id", int32(123))
+			},
+			requestedUserID: 123,
+			expectError:     false,
+			expectedStatus:  0, // No response set
+		},
+		{
+			name: "unauthorized - missing auth context",
+			setupContext: func(c *gin.Context) {
+				// Don't set auth user ID
+			},
+			requestedUserID: 123,
+			expectError:     true,
+			expectedStatus:  http.StatusUnauthorized,
+		},
+		{
+			name: "forbidden - mismatched user IDs",
+			setupContext: func(c *gin.Context) {
+				c.Set("api_auth_user_id", int32(456))
+			},
+			requestedUserID: 123,
+			expectError:     true,
+			expectedStatus:  http.StatusForbidden,
+		},
+		{
+			name: "internal error - invalid auth context type",
+			setupContext: func(c *gin.Context) {
+				c.Set("api_auth_user_id", "not-an-int32")
+			},
+			requestedUserID: 123,
+			expectError:     true,
+			expectedStatus:  http.StatusInternalServerError,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+
+			tc.setupContext(c)
+
+			err := checkUserAuthorization(c, tc.requestedUserID)
+
+			if tc.expectError {
+				require.Error(t, err)
+				require.Equal(t, tc.expectedStatus, recorder.Code)
+			} else {
+				require.NoError(t, err)
+			}
 		})
 	}
 }
