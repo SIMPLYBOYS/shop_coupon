@@ -100,9 +100,12 @@ func NewServer(store *db.Store, bfr *bloom.BloomFilter, bfg *bloom.BloomFilter, 
 		authenticated.GET("/reservation/:user_id", server.getCouponReservation)
 	}
 
-	// Time-restricted routes (only available during special time windows)
-	router.POST("/reserve", specialTime, server.createCouponReservation)
-	router.POST("/grab", specialTime, server.handleGrabRequest)
+	// Time-restricted + Authenticated routes (check time window first for early rejection)
+	authenticatedTimeRestricted := router.Group("/", specialTime, authMiddleware())
+	{
+		authenticatedTimeRestricted.POST("/reserve", server.createCouponReservation)
+		authenticatedTimeRestricted.POST("/grab", server.handleGrabRequest)
+	}
 
 	server.router = router
 

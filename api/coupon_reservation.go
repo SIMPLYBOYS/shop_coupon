@@ -82,7 +82,7 @@ func (s *Server) getCouponReservation(ctx *gin.Context) {
 	}
 
 	if userID != req.UserID {
-		ctx.JSON(http.StatusForbidden, errorResponse(errors.New("access denied")))
+		ctx.JSON(http.StatusForbidden, errorResponse(ErrAccessDenied))
 		return
 	}
 
@@ -108,20 +108,24 @@ func (s *Server) createCouponReservation(ctx *gin.Context) {
 		return
 	}
 
-	UserID := int(req.UserID) // Convert int32 to int
-	userIdStr := strconv.Itoa(UserID)
-
-	if s.bloomFilterForReserve.TestString(userIdStr) { // Check if the user has already reserved
-		ctx.JSON(http.StatusBadRequest, errorResponse(errors.New("User already reserved")))
+	// Authorization check: ensure user can only create reservation for themselves
+	if err := checkUserAuthorization(ctx, req.UserID); err != nil {
 		return
 	}
-	couponReservation, err := s.store.CreateCouponReservation(ctx, int32(UserID))
+
+	userIDStr := strconv.FormatInt(int64(req.UserID), 10)
+
+	if s.bloomFilterForReserve.TestString(userIDStr) { // Check if the user has already reserved
+		ctx.JSON(http.StatusBadRequest, errorResponse(errors.New("user already reserved")))
+		return
+	}
+	couponReservation, err := s.store.CreateCouponReservation(ctx, req.UserID)
 
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
 		return
 	}
-	s.bloomFilterForReserve.AddString(userIdStr) // Add the user to the reservation Bloom filter
+	s.bloomFilterForReserve.AddString(userIDStr) // Add the user to the reservation Bloom filter
 	ctx.JSON(http.StatusOK, couponReservation)
 }
 
