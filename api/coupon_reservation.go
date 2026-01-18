@@ -116,7 +116,7 @@ func (s *Server) createCouponReservation(ctx *gin.Context) {
 	userIDStr := strconv.FormatInt(int64(req.UserID), 10)
 
 	if s.bloomFilterForReserve.TestString(userIDStr) { // Check if the user has already reserved
-		ctx.JSON(http.StatusBadRequest, errorResponse(errors.New("User already reserved")))
+		ctx.JSON(http.StatusBadRequest, errorResponse(errors.New("user already reserved")))
 		return
 	}
 	couponReservation, err := s.store.CreateCouponReservation(ctx, req.UserID)

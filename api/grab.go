@@ -111,7 +111,7 @@ func (s *Server) handleGrabRequest(ctx *gin.Context) {
 
 	userIDStr := strconv.FormatInt(int64(req.UserID), 10)
 	if s.bloomFilterForGrab.TestString(userIDStr) { // Check if the user has already grabbed
-		ctx.JSON(http.StatusBadRequest, errorResponse(errors.New("User already grabbed")))
+		ctx.JSON(http.StatusBadRequest, errorResponse(errors.New("user already grabbed")))
 		return
 	}
 
