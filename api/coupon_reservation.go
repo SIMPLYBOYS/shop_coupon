@@ -82,7 +82,7 @@ func (s *Server) getCouponReservation(ctx *gin.Context) {
 	}
 
 	if userID != req.UserID {
-		ctx.JSON(http.StatusForbidden, errorResponse(errors.New("access denied")))
+		ctx.JSON(http.StatusForbidden, errorResponse(ErrAccessDenied))
 		return
 	}
 
