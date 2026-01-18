@@ -18,7 +18,7 @@ import (
 )
 
 type getGrabRequest struct {
-	UserID int `json:"user_id" binding:"required,min=1"` // The user ID for the grab request
+	UserID int32 `json:"user_id" binding:"required,min=1"` // The user ID for the grab request
 }
 
 func selectWinnersSimple(reservedUsers map[int]int, numWinners int) []int {
@@ -105,28 +105,17 @@ func (s *Server) handleGrabRequest(ctx *gin.Context) {
 	}
 
 	// Authorization check: ensure user can only grab for themselves
-	authUserID, err := getUserIDFromContext(ctx)
-	if err != nil {
-		if errors.Is(err, ErrUnauthorized) {
-			ctx.JSON(http.StatusUnauthorized, errorResponse(err))
-		} else {
-			ctx.JSON(http.StatusInternalServerError, errorResponse(err))
-		}
+	if err := checkUserAuthorization(ctx, req.UserID); err != nil {
 		return
 	}
 
-	if int(authUserID) != req.UserID {
-		ctx.JSON(http.StatusForbidden, errorResponse(errors.New("access denied: cannot grab for another user")))
-		return
-	}
-
-	userIDStr := strconv.Itoa(req.UserID)
+	userIDStr := strconv.FormatInt(int64(req.UserID), 10)
 	if s.bloomFilterForGrab.TestString(userIDStr) { // Check if the user has already grabbed
 		ctx.JSON(http.StatusBadRequest, errorResponse(errors.New("User already grabbed")))
 		return
 	}
 
-	reservation, err := s.store.Queries.GetCouponReservation(ctx, int32(req.UserID))
+	reservation, err := s.store.Queries.GetCouponReservation(ctx, req.UserID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
 		return

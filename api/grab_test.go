@@ -16,14 +16,14 @@ func init() {
 }
 
 // setupAuthTimeRestrictedTestRouter creates a test router with auth middleware
-// that mimics the authorization logic of handleGrabRequest and createCouponReservation.
+// that uses the same authorization logic as handleGrabRequest and createCouponReservation.
 // Note: We don't include specialTime middleware in tests as it depends on global time config.
 func setupAuthTimeRestrictedTestRouter() *gin.Engine {
 	router := gin.New()
 
 	authenticated := router.Group("/", authMiddleware())
 	{
-		// Simulated /grab handler with auth check
+		// Simulated /grab handler with auth check using helper function
 		authenticated.POST("/grab", func(c *gin.Context) {
 			var req getGrabRequest
 			if err := c.ShouldBindJSON(&req); err != nil {
@@ -31,21 +31,15 @@ func setupAuthTimeRestrictedTestRouter() *gin.Engine {
 				return
 			}
 
-			authUserID, err := getUserIDFromContext(c)
-			if err != nil {
-				c.JSON(http.StatusUnauthorized, errorResponse(err))
+			if err := checkUserAuthorization(c, req.UserID); err != nil {
 				return
 			}
 
-			if int(authUserID) != req.UserID {
-				c.JSON(http.StatusForbidden, gin.H{"error": "access denied: cannot grab for another user"})
-				return
-			}
-
+			authUserID, _ := getUserIDFromContext(c)
 			c.JSON(http.StatusOK, gin.H{"status": "authorized", "user_id": authUserID})
 		})
 
-		// Simulated /reserve handler with auth check
+		// Simulated /reserve handler with auth check using helper function
 		authenticated.POST("/reserve", func(c *gin.Context) {
 			var req createCouponReservationRequest
 			if err := c.ShouldBindJSON(&req); err != nil {
@@ -53,17 +47,11 @@ func setupAuthTimeRestrictedTestRouter() *gin.Engine {
 				return
 			}
 
-			authUserID, err := getUserIDFromContext(c)
-			if err != nil {
-				c.JSON(http.StatusUnauthorized, errorResponse(err))
+			if err := checkUserAuthorization(c, req.UserID); err != nil {
 				return
 			}
 
-			if authUserID != req.UserID {
-				c.JSON(http.StatusForbidden, gin.H{"error": "access denied: cannot create reservation for another user"})
-				return
-			}
-
+			authUserID, _ := getUserIDFromContext(c)
 			c.JSON(http.StatusOK, gin.H{"status": "authorized", "user_id": authUserID})
 		})
 	}

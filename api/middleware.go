@@ -19,6 +19,7 @@ const (
 // Sentinel errors for authentication and authorization
 var (
 	ErrUnauthorized        = errors.New("unauthorized")
+	ErrAccessDenied        = errors.New("access denied")
 	ErrInternalServerError = errors.New("internal server error")
 )
 
@@ -61,6 +62,28 @@ func getUserIDFromContext(ctx *gin.Context) (int32, error) {
 	}
 
 	return userID, nil
+}
+
+// checkUserAuthorization validates that the authenticated user matches the requested user ID.
+// Returns nil if authorized, or an appropriate error with HTTP status code.
+// This helper reduces code duplication across handlers that need authorization checks.
+func checkUserAuthorization(ctx *gin.Context, requestedUserID int32) error {
+	authUserID, err := getUserIDFromContext(ctx)
+	if err != nil {
+		if errors.Is(err, ErrUnauthorized) {
+			ctx.JSON(http.StatusUnauthorized, errorResponse(err))
+		} else {
+			ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+		}
+		return err
+	}
+
+	if authUserID != requestedUserID {
+		ctx.JSON(http.StatusForbidden, errorResponse(ErrAccessDenied))
+		return ErrAccessDenied
+	}
+
+	return nil
 }
 
 // specialTime is a middleware function that checks if the current time falls within
