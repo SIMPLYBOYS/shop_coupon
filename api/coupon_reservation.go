@@ -108,6 +108,22 @@ func (s *Server) createCouponReservation(ctx *gin.Context) {
 		return
 	}
 
+	// Authorization check: ensure user can only create reservation for themselves
+	authUserID, err := getUserIDFromContext(ctx)
+	if err != nil {
+		if errors.Is(err, ErrUnauthorized) {
+			ctx.JSON(http.StatusUnauthorized, errorResponse(err))
+		} else {
+			ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+		}
+		return
+	}
+
+	if authUserID != req.UserID {
+		ctx.JSON(http.StatusForbidden, errorResponse(errors.New("access denied: cannot create reservation for another user")))
+		return
+	}
+
 	UserID := int(req.UserID) // Convert int32 to int
 	userIdStr := strconv.Itoa(UserID)
 

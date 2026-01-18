@@ -104,6 +104,22 @@ func (s *Server) handleGrabRequest(ctx *gin.Context) {
 		return
 	}
 
+	// Authorization check: ensure user can only grab for themselves
+	authUserID, err := getUserIDFromContext(ctx)
+	if err != nil {
+		if errors.Is(err, ErrUnauthorized) {
+			ctx.JSON(http.StatusUnauthorized, errorResponse(err))
+		} else {
+			ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+		}
+		return
+	}
+
+	if int(authUserID) != req.UserID {
+		ctx.JSON(http.StatusForbidden, errorResponse(errors.New("access denied: cannot grab for another user")))
+		return
+	}
+
 	userIDStr := strconv.Itoa(req.UserID)
 	if s.bloomFilterForGrab.TestString(userIDStr) { // Check if the user has already grabbed
 		ctx.JSON(http.StatusBadRequest, errorResponse(errors.New("User already grabbed")))
