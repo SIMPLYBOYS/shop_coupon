@@ -2,12 +2,16 @@ package api
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"log"
 	"sync/atomic"
 	"time"
 
 	db "github.com/SIMPLYBOYS/shopcoupon/db/sqlc"
 	u "github.com/SIMPLYBOYS/shopcoupon/util"
 	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 	"github.com/willf/bloom"
 )
 
@@ -112,9 +116,60 @@ func NewServer(store *db.Store, bfr *bloom.BloomFilter, bfg *bloom.BloomFilter, 
 	return server
 }
 
-// errorResponse creates a gin.H map for error responses
+// publicError is an error type that is safe to expose to clients
+type publicError struct {
+	message string
+}
+
+func (e *publicError) Error() string {
+	return e.message
+}
+
+// newPublicError creates a new public error that is safe to expose to clients
+func newPublicError(message string) error {
+	return &publicError{message: message}
+}
+
+// isPublicError checks if an error is safe to expose to clients
+func isPublicError(err error) bool {
+	var pe *publicError
+	return errors.As(err, &pe)
+}
+
+// errorResponse creates a gin.H map for error responses.
+// It logs internal errors and returns sanitized messages to clients.
 func errorResponse(err error) gin.H {
-	return gin.H{"error": err.Error()}
+	// Log the original error for debugging
+	log.Printf("API error: %v", err)
+
+	// Check for known safe sentinel errors from middleware.go
+	switch {
+	case errors.Is(err, ErrUnauthorized):
+		return gin.H{"error": "unauthorized"}
+	case errors.Is(err, ErrAccessDenied):
+		return gin.H{"error": "access denied"}
+	case errors.Is(err, ErrInternalServerError):
+		return gin.H{"error": "an internal error occurred"}
+	}
+
+	// Check if it's a public error (safe to expose)
+	if isPublicError(err) {
+		return gin.H{"error": err.Error()}
+	}
+
+	// Handle validation errors from gin binding (safe to expose)
+	var validationErrs validator.ValidationErrors
+	if errors.As(err, &validationErrs) {
+		return gin.H{"error": err.Error()}
+	}
+
+	// Handle database "not found" errors
+	if errors.Is(err, sql.ErrNoRows) {
+		return gin.H{"error": "resource not found"}
+	}
+
+	// For all other errors, return a generic message
+	return gin.H{"error": "an internal error occurred"}
 }
 
 // Start starts background goroutines and the HTTP server.
