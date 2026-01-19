@@ -55,7 +55,7 @@ func setupAuthTestRouter() *gin.Engine {
 			}
 
 			if userID != req.UserID {
-				c.JSON(http.StatusForbidden, errorResponse(errors.New("access denied")))
+				c.JSON(http.StatusForbidden, errorResponse(ErrAccessDenied))
 				return
 			}
 
