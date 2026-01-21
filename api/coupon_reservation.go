@@ -115,12 +115,9 @@ func (s *Server) createCouponReservation(ctx *gin.Context) {
 
 	userIDStr := strconv.FormatInt(int64(req.UserID), 10)
 
-	// Mutex-protected check-and-set to prevent TOCTOU race condition
+	// Quick rejection check using Bloom filter
 	s.reserveMu.Lock()
 	alreadyReserved := s.bloomFilterForReserve.TestString(userIDStr)
-	if !alreadyReserved {
-		s.bloomFilterForReserve.AddString(userIDStr)
-	}
 	s.reserveMu.Unlock()
 
 	if alreadyReserved {
@@ -128,11 +125,19 @@ func (s *Server) createCouponReservation(ctx *gin.Context) {
 		return
 	}
 
+	// DB is the source of truth - unique constraint prevents duplicates
 	couponReservation, err := s.store.CreateCouponReservation(ctx, req.UserID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
 		return
 	}
+
+	// Add to Bloom filter only after successful DB operation
+	// This ensures user can retry if DB fails
+	s.reserveMu.Lock()
+	s.bloomFilterForReserve.AddString(userIDStr)
+	s.reserveMu.Unlock()
+
 	ctx.JSON(http.StatusOK, couponReservation)
 }
 

@@ -110,12 +110,9 @@ func (s *Server) handleGrabRequest(ctx *gin.Context) {
 
 	userIDStr := strconv.FormatInt(int64(req.UserID), 10)
 
-	// Mutex-protected check-and-set to prevent TOCTOU race condition
+	// Quick rejection check using Bloom filter
 	s.grabMu.Lock()
 	alreadyGrabbed := s.bloomFilterForGrab.TestString(userIDStr)
-	if !alreadyGrabbed {
-		s.bloomFilterForGrab.AddString(userIDStr)
-	}
 	s.grabMu.Unlock()
 
 	if alreadyGrabbed {
@@ -143,6 +140,11 @@ func (s *Server) handleGrabRequest(ctx *gin.Context) {
 
 	select {
 	case s.grabRequestChan <- grabRequest: // Send the grab request to the channel
+		// Add to Bloom filter only after successful grab request
+		// This ensures user can retry if earlier operations fail
+		s.grabMu.Lock()
+		s.bloomFilterForGrab.AddString(userIDStr)
+		s.grabMu.Unlock()
 		ctx.JSON(http.StatusOK, gin.H{"message": "grab request accepted"})
 		return
 	case <-time.After(3 * time.Second): // Timeout after 3 seconds
