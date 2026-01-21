@@ -109,7 +109,13 @@ func (s *Server) handleGrabRequest(ctx *gin.Context) {
 	}
 
 	userIDStr := strconv.FormatInt(int64(req.UserID), 10)
-	if s.bloomFilterForGrab.TestString(userIDStr) { // Check if the user has already grabbed
+
+	// Quick rejection check using Bloom filter (read lock for better concurrency)
+	s.grabBloomMu.RLock()
+	alreadyGrabbed := s.bloomFilterForGrab.TestString(userIDStr)
+	s.grabBloomMu.RUnlock()
+
+	if alreadyGrabbed {
 		ctx.JSON(http.StatusBadRequest, errorResponse(newPublicError("user already grabbed")))
 		return
 	}
@@ -119,8 +125,6 @@ func (s *Server) handleGrabRequest(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
 		return
 	}
-
-	s.bloomFilterForGrab.AddString(userIDStr) // Add the user to the grab Bloom filter
 
 	var zeroValue db.CouponReservations
 	if reservation == zeroValue { // Check if the reservation exists
@@ -136,6 +140,11 @@ func (s *Server) handleGrabRequest(ctx *gin.Context) {
 
 	select {
 	case s.grabRequestChan <- grabRequest: // Send the grab request to the channel
+		// Add to Bloom filter only after successful grab request (write lock)
+		// This ensures user can retry if earlier operations fail
+		s.grabBloomMu.Lock()
+		s.bloomFilterForGrab.AddString(userIDStr)
+		s.grabBloomMu.Unlock()
 		ctx.JSON(http.StatusOK, gin.H{"message": "grab request accepted"})
 		return
 	case <-time.After(3 * time.Second): // Timeout after 3 seconds
