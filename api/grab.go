@@ -109,18 +109,22 @@ func (s *Server) handleGrabRequest(ctx *gin.Context) {
 	}
 
 	userIDStr := strconv.FormatInt(int64(req.UserID), 10)
-	if s.bloomFilterForGrab.TestString(userIDStr) { // Check if the user has already grabbed
+
+	// Atomic check-and-set to prevent TOCTOU race condition
+	s.grabMu.Lock()
+	if s.bloomFilterForGrab.TestString(userIDStr) {
+		s.grabMu.Unlock()
 		ctx.JSON(http.StatusBadRequest, errorResponse(newPublicError("user already grabbed")))
 		return
 	}
+	s.bloomFilterForGrab.AddString(userIDStr)
+	s.grabMu.Unlock()
 
 	reservation, err := s.store.Queries.GetCouponReservation(ctx, req.UserID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
 		return
 	}
-
-	s.bloomFilterForGrab.AddString(userIDStr) // Add the user to the grab Bloom filter
 
 	var zeroValue db.CouponReservations
 	if reservation == zeroValue { // Check if the reservation exists

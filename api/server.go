@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"log"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -31,6 +32,8 @@ type Server struct {
 	router                *gin.Engine
 	bloomFilterForGrab    *bloom.BloomFilter // Bloom filter for grab requests
 	bloomFilterForReserve *bloom.BloomFilter // Bloom filter for reservation requests
+	grabMu                sync.Mutex         // Mutex to protect bloomFilterForGrab operations
+	reserveMu             sync.Mutex         // Mutex to protect bloomFilterForReserve operations
 	grabRequestChan       chan *struct{ UserId int }
 	numWorkers            int
 }
