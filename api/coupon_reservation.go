@@ -115,15 +115,18 @@ func (s *Server) createCouponReservation(ctx *gin.Context) {
 
 	userIDStr := strconv.FormatInt(int64(req.UserID), 10)
 
-	// Atomic check-and-set to prevent TOCTOU race condition
+	// Mutex-protected check-and-set to prevent TOCTOU race condition
 	s.reserveMu.Lock()
-	if s.bloomFilterForReserve.TestString(userIDStr) {
-		s.reserveMu.Unlock()
+	alreadyReserved := s.bloomFilterForReserve.TestString(userIDStr)
+	if !alreadyReserved {
+		s.bloomFilterForReserve.AddString(userIDStr)
+	}
+	s.reserveMu.Unlock()
+
+	if alreadyReserved {
 		ctx.JSON(http.StatusBadRequest, errorResponse(newPublicError("user already reserved")))
 		return
 	}
-	s.bloomFilterForReserve.AddString(userIDStr)
-	s.reserveMu.Unlock()
 
 	couponReservation, err := s.store.CreateCouponReservation(ctx, req.UserID)
 	if err != nil {

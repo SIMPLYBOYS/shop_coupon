@@ -46,7 +46,7 @@ const (
 )
 
 // resetBloomFilterDaily resets the Bloom filters for grab and reserve requests daily
-func resetBloomFilterDaily(ctx context.Context, bfr *bloom.BloomFilter, bfg *bloom.BloomFilter) {
+func (s *Server) resetBloomFilterDaily(ctx context.Context) {
 	for {
 		now := time.Now()
 		next := now.Add(time.Hour * 24)
@@ -57,8 +57,14 @@ func resetBloomFilterDaily(ctx context.Context, bfr *bloom.BloomFilter, bfg *blo
 			t.Stop()
 			return
 		case <-t.C:
-			bfr.ClearAll() // Clear the existing filter in place
-			bfg.ClearAll() // Clear the existing filter in place
+			// Protect ClearAll with mutex to ensure thread safety
+			s.reserveMu.Lock()
+			s.bloomFilterForReserve.ClearAll()
+			s.reserveMu.Unlock()
+
+			s.grabMu.Lock()
+			s.bloomFilterForGrab.ClearAll()
+			s.grabMu.Unlock()
 		}
 	}
 }
@@ -178,7 +184,7 @@ func errorResponse(err error) gin.H {
 func (s *Server) Start(ctx context.Context, address string) error {
 	go couponClockTimer(ctx)
 	go reservationListener(ctx, s.store)
-	go resetBloomFilterDaily(ctx, s.bloomFilterForReserve, s.bloomFilterForGrab)
+	go s.resetBloomFilterDaily(ctx)
 	go handleGrabbing(ctx, s.store, s.grabRequestChan, s.numWorkers)
 
 	return s.router.Run(address)
