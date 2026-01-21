@@ -115,10 +115,10 @@ func (s *Server) createCouponReservation(ctx *gin.Context) {
 
 	userIDStr := strconv.FormatInt(int64(req.UserID), 10)
 
-	// Quick rejection check using Bloom filter
-	s.reserveMu.Lock()
+	// Quick rejection check using Bloom filter (read lock for better concurrency)
+	s.reserveBloomMu.RLock()
 	alreadyReserved := s.bloomFilterForReserve.TestString(userIDStr)
-	s.reserveMu.Unlock()
+	s.reserveBloomMu.RUnlock()
 
 	if alreadyReserved {
 		ctx.JSON(http.StatusBadRequest, errorResponse(newPublicError("user already reserved")))
@@ -132,11 +132,11 @@ func (s *Server) createCouponReservation(ctx *gin.Context) {
 		return
 	}
 
-	// Add to Bloom filter only after successful DB operation
+	// Add to Bloom filter only after successful DB operation (write lock)
 	// This ensures user can retry if DB fails
-	s.reserveMu.Lock()
+	s.reserveBloomMu.Lock()
 	s.bloomFilterForReserve.AddString(userIDStr)
-	s.reserveMu.Unlock()
+	s.reserveBloomMu.Unlock()
 
 	ctx.JSON(http.StatusOK, couponReservation)
 }

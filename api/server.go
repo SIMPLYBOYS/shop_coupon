@@ -32,8 +32,8 @@ type Server struct {
 	router                *gin.Engine
 	bloomFilterForGrab    *bloom.BloomFilter // Bloom filter for grab requests
 	bloomFilterForReserve *bloom.BloomFilter // Bloom filter for reservation requests
-	grabMu                sync.Mutex         // Mutex to protect bloomFilterForGrab operations
-	reserveMu             sync.Mutex         // Mutex to protect bloomFilterForReserve operations
+	grabBloomMu           sync.RWMutex       // RWMutex to protect bloomFilterForGrab operations
+	reserveBloomMu        sync.RWMutex       // RWMutex to protect bloomFilterForReserve operations
 	grabRequestChan       chan *struct{ UserId int }
 	numWorkers            int
 }
@@ -57,14 +57,14 @@ func (s *Server) resetBloomFilterDaily(ctx context.Context) {
 			t.Stop()
 			return
 		case <-t.C:
-			// Protect ClearAll with mutex to ensure thread safety
-			s.reserveMu.Lock()
+			// Protect ClearAll with write lock to ensure thread safety
+			s.reserveBloomMu.Lock()
 			s.bloomFilterForReserve.ClearAll()
-			s.reserveMu.Unlock()
+			s.reserveBloomMu.Unlock()
 
-			s.grabMu.Lock()
+			s.grabBloomMu.Lock()
 			s.bloomFilterForGrab.ClearAll()
-			s.grabMu.Unlock()
+			s.grabBloomMu.Unlock()
 		}
 	}
 }
