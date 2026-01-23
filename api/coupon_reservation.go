@@ -132,6 +132,10 @@ func (s *Server) createCouponReservation(ctx *gin.Context) {
 		// This catches cases where Bloom filter was cleared or race conditions occurred
 		if isUniqueViolationError(err) {
 			log.Printf("createCouponReservation: user %d already reserved (caught by DB, bloom filter bypass)", req.UserID)
+			// Re-add to Bloom filter to prevent repeated DB hits on subsequent requests
+			s.reserveBloomMu.Lock()
+			s.bloomFilterForReserve.AddString(userIDStr)
+			s.reserveBloomMu.Unlock()
 			ctx.JSON(http.StatusBadRequest, errorResponse(newPublicError("user already reserved")))
 			return
 		}
