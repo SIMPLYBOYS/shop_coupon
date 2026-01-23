@@ -134,6 +134,9 @@ const (
 // isUniqueViolationError checks if the error is a PostgreSQL unique constraint violation.
 // This is used to detect when a duplicate entry is attempted (e.g., user already reserved).
 func isUniqueViolationError(err error) bool {
+	if err == nil {
+		return false
+	}
 	var pqErr *pq.Error
 	if errors.As(err, &pqErr) {
 		return pqErr.Code == pqUniqueViolation

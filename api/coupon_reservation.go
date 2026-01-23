@@ -129,8 +129,9 @@ func (s *Server) createCouponReservation(ctx *gin.Context) {
 	couponReservation, err := s.store.CreateCouponReservation(ctx, req.UserID)
 	if err != nil {
 		// Handle unique constraint violation (user already has a reservation)
-		// This catches cases where Bloom filter was cleared but DB still has the record
+		// This catches cases where Bloom filter was cleared or race conditions occurred
 		if isUniqueViolationError(err) {
+			log.Printf("createCouponReservation: user %d already reserved (caught by DB, bloom filter bypass)", req.UserID)
 			ctx.JSON(http.StatusBadRequest, errorResponse(newPublicError("user already reserved")))
 			return
 		}
