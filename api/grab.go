@@ -231,7 +231,13 @@ func updateCouponsForWinners(ctx context.Context, store *db.Store, workPool chan
 			}
 			_, err := store.Queries.UpdateCoupon(ctx, arg) // Update the coupon
 			if err != nil {
-				log.Println("handleGrabbing error:", err)
+				// Log unique constraint violations separately for debugging
+				// This can happen if Bloom filter was cleared or race conditions occurred
+				if isUniqueViolationError(err) {
+					log.Printf("updateCouponsForWinners: user %d already has a coupon (unique constraint)", userId)
+				} else {
+					log.Printf("updateCouponsForWinners error: %v", err)
+				}
 			}
 
 			workPool <- struct{}{} // Return the worker to the pool

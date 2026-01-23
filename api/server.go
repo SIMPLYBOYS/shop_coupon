@@ -13,6 +13,7 @@ import (
 	u "github.com/SIMPLYBOYS/shopcoupon/util"
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
+	"github.com/lib/pq"
 	"github.com/willf/bloom"
 )
 
@@ -123,6 +124,24 @@ func NewServer(store *db.Store, bfr *bloom.BloomFilter, bfg *bloom.BloomFilter, 
 	server.router = router
 
 	return server
+}
+
+// PostgreSQL error codes
+const (
+	pqUniqueViolation = "23505" // unique_violation error code
+)
+
+// isUniqueViolationError checks if the error is a PostgreSQL unique constraint violation.
+// This is used to detect when a duplicate entry is attempted (e.g., user already reserved).
+func isUniqueViolationError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) {
+		return pqErr.Code == pqUniqueViolation
+	}
+	return false
 }
 
 // publicError is an error type that is safe to expose to clients
