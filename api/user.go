@@ -48,8 +48,8 @@ func (s *Server) getUser(ctx *gin.Context) {
 }
 
 type createUserRequest struct {
-	Username string `json:"username" binding:"required"`
-	Email    string `json:"email" binding:"required,email"`
+	Username string `json:"username" binding:"required,min=3,max=50,alphanum"`
+	Email    string `json:"email" binding:"required,email,max=50"`
 }
 
 func (s *Server) createUser(ctx *gin.Context) {
