@@ -2,6 +2,7 @@ package api
 
 import (
 	"database/sql"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -32,7 +33,11 @@ func setupCouponTestRouter(coupons map[string]mockCoupon) *gin.Engine {
 
 			userID, err := getUserIDFromContext(c)
 			if err != nil {
-				c.JSON(http.StatusUnauthorized, errorResponse(ErrUnauthorized))
+				if errors.Is(err, ErrUnauthorized) {
+					c.JSON(http.StatusUnauthorized, errorResponse(err))
+				} else {
+					c.JSON(http.StatusInternalServerError, errorResponse(err))
+				}
 				return
 			}
 
