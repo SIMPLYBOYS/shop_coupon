@@ -37,6 +37,7 @@ type Server struct {
 	reserveBloomMu        sync.RWMutex       // RWMutex to protect bloomFilterForReserve operations
 	grabRequestChan       chan *struct{ UserId int }
 	numWorkers            int
+	rateLimiter           *rateLimiter // Rate limiter for API requests
 }
 
 const (
@@ -99,12 +100,13 @@ func NewServer(store *db.Store, bfr *bloom.BloomFilter, bfg *bloom.BloomFilter, 
 		bloomFilterForGrab:    bfg,
 		grabRequestChan:       grabRC,
 		numWorkers:            numWorkers,
+		rateLimiter:           newRateLimiter(60, time.Minute), // 60 requests per minute per IP
 	}
 
 	router := gin.Default()
 
 	// Apply rate limiting globally to prevent DoS and brute force attacks
-	router.Use(rateLimitMiddleware())
+	router.Use(server.rateLimitMiddleware())
 
 	// Public routes (no authentication required)
 	router.POST("/user", server.createUser)
@@ -208,6 +210,7 @@ func (s *Server) Start(ctx context.Context, address string) error {
 	go reservationListener(ctx, s.store)
 	go s.resetBloomFilterDaily(ctx)
 	go handleGrabbing(ctx, s.store, s.grabRequestChan, s.numWorkers)
+	s.rateLimiter.startCleanup(ctx)
 
 	return s.router.Run(address)
 }
