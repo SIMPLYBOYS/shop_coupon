@@ -1,38 +1,55 @@
 package util
 
 import (
-	"math/rand"
+	"crypto/rand"
+	"math/big"
 	"strings"
 )
 
 const alphabet = "abcdefghijklmnopqrstuvwxyz"
 
-// RandomString generates a random string of length n
+// secureRandomInt generates a cryptographically secure random integer in [0, max)
+func secureRandomInt(max int) int {
+	if max <= 0 {
+		return 0
+	}
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	if err != nil {
+		// Fallback: this should never happen in normal circumstances
+		// as crypto/rand.Reader is always available on supported platforms
+		panic("crypto/rand failed: " + err.Error())
+	}
+	return int(n.Int64())
+}
+
+// RandomDomain returns a random email domain for testing purposes
 func RandomDomain() string {
 	var sb strings.Builder
 
 	// Append domain name
 	domain := []string{"gmail.com", "yahoo.com", "hotmail.com", "outlook.com"}
 	sb.WriteString("@")
-	sb.WriteString(domain[rand.Intn(len(domain))])
+	sb.WriteString(domain[secureRandomInt(len(domain))])
 
 	return sb.String()
 }
 
+// RandomName generates a random username for testing purposes
 func RandomName() string {
 	var sb strings.Builder
 	k := len(alphabet)
 
 	// Generate random username
-	usernameLength := rand.Intn(10) + 5 // Random length between 5 and 14
+	usernameLength := secureRandomInt(10) + 5 // Random length between 5 and 14
 	for i := 0; i < usernameLength; i++ {
-		c := alphabet[rand.Intn(k)]
+		c := alphabet[secureRandomInt(k)]
 		sb.WriteByte(c)
 	}
 
 	return sb.String()
 }
 
+// RandomNumber generates a cryptographically secure random number in [0, 10)
 func RandomNumber() int {
-	return rand.Intn(10)
+	return secureRandomInt(10)
 }
