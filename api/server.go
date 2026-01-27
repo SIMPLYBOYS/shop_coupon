@@ -103,6 +103,9 @@ func NewServer(store *db.Store, bfr *bloom.BloomFilter, bfg *bloom.BloomFilter, 
 
 	router := gin.Default()
 
+	// Apply rate limiting globally to prevent DoS and brute force attacks
+	router.Use(rateLimitMiddleware())
+
 	// Public routes (no authentication required)
 	router.POST("/user", server.createUser)
 

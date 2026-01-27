@@ -6,10 +6,95 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+// rateLimiter implements a simple in-memory rate limiter using token bucket algorithm
+type rateLimiter struct {
+	visitors map[string]*visitor
+	mu       sync.RWMutex
+	rate     int           // requests per window
+	window   time.Duration // time window
+}
+
+type visitor struct {
+	count    int
+	lastSeen time.Time
+}
+
+// newRateLimiter creates a new rate limiter with the specified rate and window
+func newRateLimiter(rate int, window time.Duration) *rateLimiter {
+	rl := &rateLimiter{
+		visitors: make(map[string]*visitor),
+		rate:     rate,
+		window:   window,
+	}
+	// Start cleanup goroutine to remove old entries
+	go rl.cleanupVisitors()
+	return rl
+}
+
+// cleanupVisitors periodically removes stale visitor entries
+func (rl *rateLimiter) cleanupVisitors() {
+	for {
+		time.Sleep(rl.window)
+		rl.mu.Lock()
+		for ip, v := range rl.visitors {
+			if time.Since(v.lastSeen) > rl.window {
+				delete(rl.visitors, ip)
+			}
+		}
+		rl.mu.Unlock()
+	}
+}
+
+// isAllowed checks if a request from the given IP is allowed
+func (rl *rateLimiter) isAllowed(ip string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	v, exists := rl.visitors[ip]
+	now := time.Now()
+
+	if !exists {
+		rl.visitors[ip] = &visitor{count: 1, lastSeen: now}
+		return true
+	}
+
+	// Reset if window has passed
+	if now.Sub(v.lastSeen) > rl.window {
+		v.count = 1
+		v.lastSeen = now
+		return true
+	}
+
+	// Check rate limit
+	if v.count >= rl.rate {
+		return false
+	}
+
+	v.count++
+	v.lastSeen = now
+	return true
+}
+
+// Global rate limiter: 60 requests per minute per IP
+var globalRateLimiter = newRateLimiter(60, time.Minute)
+
+// rateLimitMiddleware returns a middleware that limits requests per IP
+func rateLimitMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ip := c.ClientIP()
+		if !globalRateLimiter.isAllowed(ip) {
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
+			return
+		}
+		c.Next()
+	}
+}
 
 const (
 	// authUserIDKey is the context key for authenticated user ID (package-private)
