@@ -12,6 +12,9 @@ SELECT * FROM coupon_reservations WHERE user_id = $1 AND reserved_at BETWEEN $2 
 -- name: ListCouponReservations :many
 SELECT * FROM coupon_reservations WHERE is_processed = FALSE ORDER BY id FOR UPDATE;
 
+-- name: ListCouponReservationsWithLimit :many
+SELECT * FROM coupon_reservations WHERE is_processed = FALSE ORDER BY id LIMIT $1 FOR UPDATE;
+
 -- name: CreateCouponReservation :one
 INSERT INTO coupon_reservations (user_id, reserved_at, is_processed) VALUES ($1, NOW(), FALSE) RETURNING *;
 

@@ -173,6 +173,38 @@ func (q *Queries) ListCouponReservations(ctx context.Context) ([]CouponReservati
 	return items, nil
 }
 
+const listCouponReservationsWithLimit = `-- name: ListCouponReservationsWithLimit :many
+SELECT id, user_id, reserved_at, is_processed FROM coupon_reservations WHERE is_processed = FALSE ORDER BY id LIMIT $1 FOR UPDATE
+`
+
+func (q *Queries) ListCouponReservationsWithLimit(ctx context.Context, limit int32) ([]CouponReservations, error) {
+	rows, err := q.db.QueryContext(ctx, listCouponReservationsWithLimit, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CouponReservations
+	for rows.Next() {
+		var i CouponReservations
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.ReservedAt,
+			&i.IsProcessed,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markCouponReservationAsProcessed = `-- name: MarkCouponReservationAsProcessed :exec
 UPDATE coupon_reservations SET is_processed = TRUE WHERE id = $1
 `

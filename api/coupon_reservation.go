@@ -38,9 +38,12 @@ func reservationListener(ctx context.Context, store *db.Store) {
 }
 
 // handleReservations processes the coupon reservations
+// Uses a limit to prevent DoS attacks from overwhelming the system with unlimited reservations
 func handleReservations(ctx context.Context, store *db.Store) {
+	const maxReservationsPerCycle = 10000
+
 	log.Default().Printf("handleReservations ===============>")
-	reservations, err := store.Queries.ListCouponReservations(ctx)
+	reservations, err := store.Queries.ListCouponReservationsWithLimit(ctx, maxReservationsPerCycle)
 	if err != nil {
 		log.Println("handleReservations error:", err)
 		return
