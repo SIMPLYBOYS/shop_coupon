@@ -1,15 +1,111 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"log"
 	"math"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+// rateLimiter implements a simple in-memory rate limiter using fixed window counter algorithm
+type rateLimiter struct {
+	visitors map[string]*visitor
+	mu       sync.RWMutex
+	rate     int           // requests per window
+	window   time.Duration // time window
+}
+
+type visitor struct {
+	count    int       // request count in current window
+	lastSeen time.Time // last request timestamp
+}
+
+// newRateLimiter creates a new rate limiter with the specified rate and window.
+// The cleanup goroutine must be started separately by calling startCleanup(ctx).
+func newRateLimiter(rate int, window time.Duration) *rateLimiter {
+	return &rateLimiter{
+		visitors: make(map[string]*visitor),
+		rate:     rate,
+		window:   window,
+	}
+}
+
+// startCleanup starts the cleanup goroutine that removes stale visitor entries.
+// The goroutine will exit when the context is cancelled.
+func (rl *rateLimiter) startCleanup(ctx context.Context) {
+	go rl.cleanupVisitors(ctx)
+}
+
+// cleanupVisitors periodically removes stale visitor entries.
+// Exits gracefully when context is cancelled to prevent goroutine leaks.
+func (rl *rateLimiter) cleanupVisitors(ctx context.Context) {
+	ticker := time.NewTicker(rl.window)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			rl.mu.Lock()
+			for ip, v := range rl.visitors {
+				if time.Since(v.lastSeen) > rl.window {
+					delete(rl.visitors, ip)
+				}
+			}
+			rl.mu.Unlock()
+		}
+	}
+}
+
+// isAllowed checks if a request from the given IP is allowed
+func (rl *rateLimiter) isAllowed(ip string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	v, exists := rl.visitors[ip]
+	now := time.Now()
+
+	if !exists {
+		rl.visitors[ip] = &visitor{count: 1, lastSeen: now}
+		return true
+	}
+
+	// Reset if window has passed
+	if now.Sub(v.lastSeen) > rl.window {
+		v.count = 1
+		v.lastSeen = now
+		return true
+	}
+
+	// Check rate limit
+	if v.count >= rl.rate {
+		return false
+	}
+
+	v.count++
+	v.lastSeen = now
+	return true
+}
+
+// rateLimitMiddleware returns a middleware that limits requests per IP.
+// This is a method on Server to avoid global state and enable proper cleanup.
+func (s *Server) rateLimitMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ip := c.ClientIP()
+		if !s.rateLimiter.isAllowed(ip) {
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
+			return
+		}
+		c.Next()
+	}
+}
 
 const (
 	// authUserIDKey is the context key for authenticated user ID (package-private)
