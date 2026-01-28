@@ -254,8 +254,28 @@ func fallbackUpdateCouponsForWinners(ctx context.Context, store *db.Store, workP
 		wg.Add(1)
 		go func(index int) {
 			defer wg.Done()
-			<-workPool // Get a worker from the pool
-			defer func() { workPool <- struct{}{} }() // Return the worker to the pool
+
+			// Safely get a worker from the pool with context cancellation support
+			select {
+			case <-workPool:
+				// Got a worker, continue
+			case <-ctx.Done():
+				mu.Lock()
+				failCount++
+				mu.Unlock()
+				log.Printf("fallbackUpdateCouponsForWinners: context cancelled for user %d", winners[index])
+				return
+			}
+
+			// Safely return the worker to the pool
+			defer func() {
+				select {
+				case workPool <- struct{}{}:
+					// Worker returned successfully
+				default:
+					// Pool is full or closed, ignore
+				}
+			}()
 
 			userId := winners[index]
 			discount := coupons[index].Discount

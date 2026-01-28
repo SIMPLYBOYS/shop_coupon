@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -123,10 +124,11 @@ func (q *Queries) BatchAssignCouponsToUsers(ctx context.Context, params BatchAss
 }
 
 // BatchCreateCouponsWithTx creates multiple coupons in a transaction for atomicity
+// Uses ReadCommitted isolation level for balance between consistency and performance
 func (s *Store) BatchCreateCouponsWithTx(ctx context.Context, params BatchCreateCouponsParams, reservationIDs []int32) (int64, error) {
-	tx, err := s.DB.BeginTx(ctx, nil)
+	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("begin transaction: %w", err)
 	}
 	defer tx.Rollback()
 
