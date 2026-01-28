@@ -26,3 +26,8 @@ DELETE FROM coupon_reservations;
 
 -- name: MarkCouponReservationAsProcessed :exec
 UPDATE coupon_reservations SET is_processed = TRUE WHERE id = $1;
+
+-- name: BatchMarkCouponReservationsAsProcessed :exec
+-- Batch update coupon reservations to mark them as processed
+-- Uses ANY to efficiently update multiple rows in a single query
+UPDATE coupon_reservations SET is_processed = TRUE WHERE id = ANY($1::int[]);

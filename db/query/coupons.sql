@@ -34,3 +34,13 @@ RETURNING *;
 -- name: DeleteCoupon :exec
 DELETE FROM coupons
 WHERE id = $1;
+
+-- name: BatchAssignCouponsToUsers :exec
+-- Batch update coupons to assign them to users
+-- Uses unnest to efficiently update multiple rows in a single query
+UPDATE coupons
+SET user_id = batch.user_id, is_used = true
+FROM (
+    SELECT unnest($1::int[]) AS coupon_id, unnest($2::int[]) AS user_id
+) AS batch
+WHERE coupons.id = batch.coupon_id AND coupons.user_id IS NULL;

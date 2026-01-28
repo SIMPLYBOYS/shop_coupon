@@ -199,24 +199,55 @@ func receiveGrabRequests(grabRequestChan <-chan *struct {
 }
 
 // updateCouponsForWinners updates the coupons for winners
-// Note: Each coupon update is independent, so we don't use a transaction here.
+// Uses batch UPDATE to minimize database round trips instead of individual updates
 func updateCouponsForWinners(ctx context.Context, store *db.Store, workPool chan struct{}, coupons []db.Coupons, winners []int) {
-	var winnersMutex sync.Mutex
+	if len(winners) == 0 || len(coupons) == 0 {
+		return
+	}
+
+	// Prepare batch assignment parameters
+	numToAssign := len(winners)
+	if numToAssign > len(coupons) {
+		numToAssign = len(coupons)
+	}
+
+	couponIDs := make([]int32, numToAssign)
+	userIDs := make([]int32, numToAssign)
+
+	for i := 0; i < numToAssign; i++ {
+		couponIDs[i] = coupons[i].ID
+		userIDs[i] = int32(winners[i])
+	}
+
+	// Use batch operation for assigning coupons to users
+	batchParams := db.BatchAssignCouponsToUsersParams{
+		CouponIDs: couponIDs,
+		UserIDs:   userIDs,
+	}
+
+	rowsAffected, err := store.Queries.BatchAssignCouponsToUsers(ctx, batchParams)
+	if err != nil {
+		log.Printf("updateCouponsForWinners BatchAssignCouponsToUsers error: %v", err)
+		// Fall back to individual updates if batch fails
+		fallbackUpdateCouponsForWinners(ctx, store, workPool, coupons, winners)
+		return
+	}
+
+	log.Printf("updateCouponsForWinners: batch assigned %d coupons to users", rowsAffected)
+}
+
+// fallbackUpdateCouponsForWinners provides a fallback mechanism using individual updates
+// This is used when the batch operation fails
+func fallbackUpdateCouponsForWinners(ctx context.Context, store *db.Store, workPool chan struct{}, coupons []db.Coupons, winners []int) {
 	var wg sync.WaitGroup
 
-	for i := 0; i < len(winners); i++ {
+	for i := 0; i < len(winners) && i < len(coupons); i++ {
 		wg.Add(1)
 		go func(index int) {
 			defer wg.Done()
 			<-workPool // Get a worker from the pool
 
-			winnersMutex.Lock()
-			userId := 0
-			if index < len(winners) {
-				userId = winners[index]
-			}
-			winnersMutex.Unlock()
-
+			userId := winners[index]
 			discount := coupons[index].Discount
 			if discount == "" {
 				discount = "0.25"
@@ -229,14 +260,12 @@ func updateCouponsForWinners(ctx context.Context, store *db.Store, workPool chan
 				IsUsed:     true,
 				UserID:     sql.NullInt32{Int32: int32(userId), Valid: true},
 			}
-			_, err := store.Queries.UpdateCoupon(ctx, arg) // Update the coupon
+			_, err := store.Queries.UpdateCoupon(ctx, arg)
 			if err != nil {
-				// Log unique constraint violations separately for debugging
-				// This can happen if Bloom filter was cleared or race conditions occurred
 				if isUniqueViolationError(err) {
-					log.Printf("updateCouponsForWinners: user %d already has a coupon (unique constraint)", userId)
+					log.Printf("fallbackUpdateCouponsForWinners: user %d already has a coupon (unique constraint)", userId)
 				} else {
-					log.Printf("updateCouponsForWinners error: %v", err)
+					log.Printf("fallbackUpdateCouponsForWinners error: %v", err)
 				}
 			}
 
