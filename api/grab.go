@@ -237,15 +237,25 @@ func updateCouponsForWinners(ctx context.Context, store *db.Store, workPool chan
 }
 
 // fallbackUpdateCouponsForWinners provides a fallback mechanism using individual updates
-// This is used when the batch operation fails
+// This is used when the batch operation fails. Uses limited concurrency to avoid
+// overwhelming the database if there are connection issues.
 func fallbackUpdateCouponsForWinners(ctx context.Context, store *db.Store, workPool chan struct{}, coupons []db.Coupons, winners []int) {
 	var wg sync.WaitGroup
+	var successCount int32
+	var failCount int32
+	var mu sync.Mutex
 
-	for i := 0; i < len(winners) && i < len(coupons); i++ {
+	numToProcess := len(winners)
+	if numToProcess > len(coupons) {
+		numToProcess = len(coupons)
+	}
+
+	for i := 0; i < numToProcess; i++ {
 		wg.Add(1)
 		go func(index int) {
 			defer wg.Done()
 			<-workPool // Get a worker from the pool
+			defer func() { workPool <- struct{}{} }() // Return the worker to the pool
 
 			userId := winners[index]
 			discount := coupons[index].Discount
@@ -262,18 +272,25 @@ func fallbackUpdateCouponsForWinners(ctx context.Context, store *db.Store, workP
 			}
 			_, err := store.Queries.UpdateCoupon(ctx, arg)
 			if err != nil {
+				mu.Lock()
+				failCount++
+				mu.Unlock()
 				if isUniqueViolationError(err) {
 					log.Printf("fallbackUpdateCouponsForWinners: user %d already has a coupon (unique constraint)", userId)
 				} else {
-					log.Printf("fallbackUpdateCouponsForWinners error: %v", err)
+					log.Printf("fallbackUpdateCouponsForWinners error for user %d: %v", userId, err)
 				}
+				return
 			}
 
-			workPool <- struct{}{} // Return the worker to the pool
+			mu.Lock()
+			successCount++
+			mu.Unlock()
 		}(i)
 	}
 
 	wg.Wait()
+	log.Printf("fallbackUpdateCouponsForWinners: completed %d/%d updates (%d failed)", successCount, numToProcess, failCount)
 }
 
 // collectUnwinners collects the user IDs of the users who did not win

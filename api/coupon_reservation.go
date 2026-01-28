@@ -155,9 +155,10 @@ func (s *Server) createCouponReservation(ctx *gin.Context) {
 }
 
 // generateCouponsForReservations generates coupons for the given reservations
-// Uses batch operations to minimize database round trips:
+// Uses batch operations with transaction protection to ensure atomicity:
 // - Batch INSERT for creating coupons
 // - Batch UPDATE for marking reservations as processed
+// Both operations are wrapped in a transaction to prevent data inconsistency
 func generateCouponsForReservations(ctx context.Context, store *db.Store, reservations []db.CouponReservations, numCoupons int) int {
 	if len(reservations) == 0 {
 		return 0
@@ -169,29 +170,35 @@ func generateCouponsForReservations(ctx context.Context, store *db.Store, reserv
 		couponsToCreate = len(reservations)
 	}
 
-	// Collect all reservation IDs to mark as processed
-	allReservationIDs := make([]int32, len(reservations))
-	for i, r := range reservations {
-		allReservationIDs[i] = r.ID
-	}
+	// Separate reservations into winners (get coupons) and non-winners (just mark processed)
+	winnerReservationIDs := make([]int32, 0, couponsToCreate)
+	nonWinnerReservationIDs := make([]int32, 0, len(reservations)-couponsToCreate)
 
 	// Generate coupon codes for winners (up to numCoupons)
 	couponCodes := make([]string, 0, couponsToCreate)
-	couponReservationIDs := make([]int32, 0, couponsToCreate)
+	failedCodeGenIDs := make([]int32, 0) // Track reservations where code generation failed
 
-	for i := 0; i < couponsToCreate && i < len(reservations); i++ {
-		couponCode, err := u.GenerateCouponCode()
-		if err != nil {
-			log.Printf("generateCouponsForReservations GenerateCouponCode error for reservation %d: %v", reservations[i].ID, err)
-			continue
+	for i := 0; i < len(reservations); i++ {
+		if i < couponsToCreate {
+			// This reservation should get a coupon
+			couponCode, err := u.GenerateCouponCode()
+			if err != nil {
+				log.Printf("generateCouponsForReservations GenerateCouponCode error for reservation %d: %v", reservations[i].ID, err)
+				// Don't mark as processed - allow retry on next cycle
+				failedCodeGenIDs = append(failedCodeGenIDs, reservations[i].ID)
+				continue
+			}
+			couponCodes = append(couponCodes, couponCode)
+			winnerReservationIDs = append(winnerReservationIDs, reservations[i].ID)
+		} else {
+			// This reservation doesn't get a coupon, just mark as processed
+			nonWinnerReservationIDs = append(nonWinnerReservationIDs, reservations[i].ID)
 		}
-		couponCodes = append(couponCodes, couponCode)
-		couponReservationIDs = append(couponReservationIDs, reservations[i].ID)
 	}
 
 	couponsGenerated := 0
 
-	// Batch create coupons if we have any codes
+	// Use transaction to create coupons and mark winner reservations as processed atomically
 	if len(couponCodes) > 0 {
 		batchParams := db.BatchCreateCouponsParams{
 			Codes:      couponCodes,
@@ -199,41 +206,73 @@ func generateCouponsForReservations(ctx context.Context, store *db.Store, reserv
 			ExpiryDate: time.Now().AddDate(0, 0, 7), // Expiry date is 7 days from now
 		}
 
-		created, err := store.Queries.BatchCreateCoupons(ctx, batchParams)
+		created, err := store.BatchCreateCouponsWithTx(ctx, batchParams, winnerReservationIDs)
 		if err != nil {
-			log.Printf("generateCouponsForReservations BatchCreateCoupons error: %v", err)
-			// Fall back to individual creation if batch fails
-			for i, code := range couponCodes {
-				arg := db.CreateCouponParams{
-					Code:       code,
-					Discount:   batchParams.Discount,
-					ExpiryDate: batchParams.ExpiryDate,
-				}
-				_, err := store.Queries.CreateCoupon(ctx, arg)
-				if err != nil {
-					log.Printf("generateCouponsForReservations CreateCoupon fallback error for reservation %d: %v", couponReservationIDs[i], err)
-				} else {
-					couponsGenerated++
-				}
-			}
+			log.Printf("generateCouponsForReservations BatchCreateCouponsWithTx error: %v", err)
+			// Fall back to individual creation with immediate marking
+			couponsGenerated = fallbackCreateCouponsIndividually(ctx, store, couponCodes, winnerReservationIDs, batchParams)
 		} else {
 			couponsGenerated = int(created)
+			log.Printf("generateCouponsForReservations: created %d coupons and marked %d reservations in transaction", created, len(winnerReservationIDs))
 		}
 	}
 
-	// Batch mark all reservations as processed
-	if len(allReservationIDs) > 0 {
-		err := store.Queries.BatchMarkCouponReservationsAsProcessed(ctx, allReservationIDs)
+	// Mark non-winner reservations as processed (separate from winners)
+	if len(nonWinnerReservationIDs) > 0 {
+		err := store.Queries.BatchMarkCouponReservationsAsProcessed(ctx, nonWinnerReservationIDs)
 		if err != nil {
-			log.Printf("generateCouponsForReservations BatchMarkCouponReservationsAsProcessed error: %v", err)
-			// Fall back to individual marking if batch fails
-			for _, id := range allReservationIDs {
+			log.Printf("generateCouponsForReservations BatchMarkNonWinners error: %v", err)
+			// Fall back to individual marking
+			successCount := 0
+			for _, id := range nonWinnerReservationIDs {
 				if markErr := store.Queries.MarkCouponReservationAsProcessed(ctx, id); markErr != nil {
 					log.Printf("generateCouponsForReservations MarkAsProcessed fallback error for reservation %d: %v", id, markErr)
+				} else {
+					successCount++
 				}
 			}
+			log.Printf("generateCouponsForReservations: fallback marked %d/%d non-winner reservations", successCount, len(nonWinnerReservationIDs))
 		}
 	}
 
+	// Log failed code generations (these will be retried on next cycle)
+	if len(failedCodeGenIDs) > 0 {
+		log.Printf("generateCouponsForReservations: %d reservations had code generation failures, will retry next cycle", len(failedCodeGenIDs))
+	}
+
+	return couponsGenerated
+}
+
+// fallbackCreateCouponsIndividually creates coupons one by one when batch operation fails
+// Each successful coupon creation immediately marks its reservation as processed
+func fallbackCreateCouponsIndividually(ctx context.Context, store *db.Store, codes []string, reservationIDs []int32, params db.BatchCreateCouponsParams) int {
+	couponsGenerated := 0
+
+	for i, code := range codes {
+		if i >= len(reservationIDs) {
+			break
+		}
+
+		arg := db.CreateCouponParams{
+			Code:       code,
+			Discount:   params.Discount,
+			ExpiryDate: params.ExpiryDate,
+		}
+
+		_, err := store.Queries.CreateCoupon(ctx, arg)
+		if err != nil {
+			log.Printf("fallbackCreateCouponsIndividually CreateCoupon error for reservation %d: %v", reservationIDs[i], err)
+			// Don't mark as processed - allow retry
+			continue
+		}
+
+		// Only mark as processed after successful coupon creation
+		if markErr := store.Queries.MarkCouponReservationAsProcessed(ctx, reservationIDs[i]); markErr != nil {
+			log.Printf("CRITICAL: coupon created but MarkAsProcessed failed for reservation %d: %v", reservationIDs[i], markErr)
+		}
+		couponsGenerated++
+	}
+
+	log.Printf("fallbackCreateCouponsIndividually: created %d/%d coupons", couponsGenerated, len(codes))
 	return couponsGenerated
 }

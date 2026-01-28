@@ -9,6 +9,9 @@ import (
 	"github.com/lib/pq"
 )
 
+// MaxBatchSize limits the number of records per batch to prevent SQL statement overflow
+const MaxBatchSize = 1000
+
 // BatchCreateCouponsParams holds parameters for batch coupon creation
 type BatchCreateCouponsParams struct {
 	Codes      []string
@@ -17,19 +20,46 @@ type BatchCreateCouponsParams struct {
 }
 
 // BatchCreateCoupons creates multiple coupons in a single database operation
-// using a multi-row INSERT statement for better performance
+// using a multi-row INSERT statement for better performance.
+// If the batch size exceeds MaxBatchSize, it will be processed in chunks.
 func (q *Queries) BatchCreateCoupons(ctx context.Context, params BatchCreateCouponsParams) (int64, error) {
 	if len(params.Codes) == 0 {
 		return 0, nil
 	}
 
-	// Build multi-row INSERT statement
-	valueStrings := make([]string, 0, len(params.Codes))
-	valueArgs := make([]interface{}, 0, len(params.Codes)*3)
+	var totalCreated int64
 
-	for i, code := range params.Codes {
+	// Process in chunks to avoid SQL statement size limits
+	for start := 0; start < len(params.Codes); start += MaxBatchSize {
+		end := start + MaxBatchSize
+		if end > len(params.Codes) {
+			end = len(params.Codes)
+		}
+
+		chunk := params.Codes[start:end]
+		created, err := q.batchCreateCouponsChunk(ctx, chunk, params.Discount, params.ExpiryDate)
+		if err != nil {
+			return totalCreated, fmt.Errorf("batch create coupons chunk [%d:%d] failed: %w", start, end, err)
+		}
+		totalCreated += created
+	}
+
+	return totalCreated, nil
+}
+
+// batchCreateCouponsChunk creates a chunk of coupons (internal helper)
+func (q *Queries) batchCreateCouponsChunk(ctx context.Context, codes []string, discount string, expiryDate time.Time) (int64, error) {
+	if len(codes) == 0 {
+		return 0, nil
+	}
+
+	// Build multi-row INSERT statement
+	valueStrings := make([]string, 0, len(codes))
+	valueArgs := make([]interface{}, 0, len(codes)*3)
+
+	for i, code := range codes {
 		valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d, $%d)", i*3+1, i*3+2, i*3+3))
-		valueArgs = append(valueArgs, code, params.Discount, params.ExpiryDate)
+		valueArgs = append(valueArgs, code, discount, expiryDate)
 	}
 
 	query := fmt.Sprintf(
@@ -71,14 +101,15 @@ func (q *Queries) BatchAssignCouponsToUsers(ctx context.Context, params BatchAss
 	}
 
 	if len(params.CouponIDs) != len(params.UserIDs) {
-		return 0, fmt.Errorf("coupon_ids and user_ids must have the same length")
+		return 0, fmt.Errorf("coupon_ids and user_ids length mismatch: %d != %d", len(params.CouponIDs), len(params.UserIDs))
 	}
 
+	// Use int4[] (integer[]) for PostgreSQL type safety with Go int32
 	query := `
 		UPDATE coupons
 		SET user_id = batch.user_id, is_used = true
 		FROM (
-			SELECT unnest($1::int[]) AS coupon_id, unnest($2::int[]) AS user_id
+			SELECT unnest($1::int4[]) AS coupon_id, unnest($2::int4[]) AS user_id
 		) AS batch
 		WHERE coupons.id = batch.coupon_id AND coupons.user_id IS NULL
 	`
