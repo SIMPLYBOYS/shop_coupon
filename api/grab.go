@@ -199,24 +199,85 @@ func receiveGrabRequests(grabRequestChan <-chan *struct {
 }
 
 // updateCouponsForWinners updates the coupons for winners
-// Note: Each coupon update is independent, so we don't use a transaction here.
+// Uses batch UPDATE to minimize database round trips instead of individual updates
 func updateCouponsForWinners(ctx context.Context, store *db.Store, workPool chan struct{}, coupons []db.Coupons, winners []int) {
-	var winnersMutex sync.Mutex
-	var wg sync.WaitGroup
+	if len(winners) == 0 || len(coupons) == 0 {
+		return
+	}
 
-	for i := 0; i < len(winners); i++ {
+	// Prepare batch assignment parameters
+	numToAssign := len(winners)
+	if numToAssign > len(coupons) {
+		numToAssign = len(coupons)
+	}
+
+	couponIDs := make([]int32, numToAssign)
+	userIDs := make([]int32, numToAssign)
+
+	for i := 0; i < numToAssign; i++ {
+		couponIDs[i] = coupons[i].ID
+		userIDs[i] = int32(winners[i])
+	}
+
+	// Use batch operation for assigning coupons to users
+	batchParams := db.BatchAssignCouponsToUsersParams{
+		CouponIDs: couponIDs,
+		UserIDs:   userIDs,
+	}
+
+	rowsAffected, err := store.Queries.BatchAssignCouponsToUsers(ctx, batchParams)
+	if err != nil {
+		log.Printf("updateCouponsForWinners BatchAssignCouponsToUsers error: %v", err)
+		// Fall back to individual updates if batch fails
+		fallbackUpdateCouponsForWinners(ctx, store, workPool, coupons, winners)
+		return
+	}
+
+	log.Printf("updateCouponsForWinners: batch assigned %d coupons to users", rowsAffected)
+}
+
+// fallbackUpdateCouponsForWinners provides a fallback mechanism using individual updates
+// This is used when the batch operation fails. Uses limited concurrency to avoid
+// overwhelming the database if there are connection issues.
+func fallbackUpdateCouponsForWinners(ctx context.Context, store *db.Store, workPool chan struct{}, coupons []db.Coupons, winners []int) {
+	var wg sync.WaitGroup
+	var successCount int32
+	var failCount int32
+	var mu sync.Mutex
+
+	numToProcess := len(winners)
+	if numToProcess > len(coupons) {
+		numToProcess = len(coupons)
+	}
+
+	for i := 0; i < numToProcess; i++ {
 		wg.Add(1)
 		go func(index int) {
 			defer wg.Done()
-			<-workPool // Get a worker from the pool
 
-			winnersMutex.Lock()
-			userId := 0
-			if index < len(winners) {
-				userId = winners[index]
+			// Safely get a worker from the pool with context cancellation support
+			select {
+			case <-workPool:
+				// Got a worker, continue
+			case <-ctx.Done():
+				mu.Lock()
+				failCount++
+				mu.Unlock()
+				log.Printf("fallbackUpdateCouponsForWinners: context cancelled for user %d", winners[index])
+				return
 			}
-			winnersMutex.Unlock()
 
+			// Safely return the worker to the pool
+			defer func() {
+				select {
+				case workPool <- struct{}{}:
+					// Worker returned successfully
+				default:
+					// Pool is full or closed, ignore
+				}
+			}()
+
+			userId := winners[index]
 			discount := coupons[index].Discount
 			if discount == "" {
 				discount = "0.25"
@@ -229,22 +290,27 @@ func updateCouponsForWinners(ctx context.Context, store *db.Store, workPool chan
 				IsUsed:     true,
 				UserID:     sql.NullInt32{Int32: int32(userId), Valid: true},
 			}
-			_, err := store.Queries.UpdateCoupon(ctx, arg) // Update the coupon
+			_, err := store.Queries.UpdateCoupon(ctx, arg)
 			if err != nil {
-				// Log unique constraint violations separately for debugging
-				// This can happen if Bloom filter was cleared or race conditions occurred
+				mu.Lock()
+				failCount++
+				mu.Unlock()
 				if isUniqueViolationError(err) {
-					log.Printf("updateCouponsForWinners: user %d already has a coupon (unique constraint)", userId)
+					log.Printf("fallbackUpdateCouponsForWinners: user %d already has a coupon (unique constraint)", userId)
 				} else {
-					log.Printf("updateCouponsForWinners error: %v", err)
+					log.Printf("fallbackUpdateCouponsForWinners error for user %d: %v", userId, err)
 				}
+				return
 			}
 
-			workPool <- struct{}{} // Return the worker to the pool
+			mu.Lock()
+			successCount++
+			mu.Unlock()
 		}(i)
 	}
 
 	wg.Wait()
+	log.Printf("fallbackUpdateCouponsForWinners: completed %d/%d updates (%d failed)", successCount, numToProcess, failCount)
 }
 
 // collectUnwinners collects the user IDs of the users who did not win
