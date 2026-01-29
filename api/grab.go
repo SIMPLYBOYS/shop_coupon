@@ -180,41 +180,28 @@ func isWithinGrabWindow(now int64) bool {
 	return now >= couponTimeConfig.startGrabTime.Load() && now < couponTimeConfig.endGrabTime.Load()
 }
 
-// receiveGrabRequests receives grab requests from the channel
-// Uses a single reusable timer to avoid memory leaks from time.After in a loop.
-// The timer resets after each received request (per-request timeout of 3 seconds).
-// Returns early if no more requests are pending in the channel.
+// receiveGrabRequests receives grab requests from the channel.
+// Uses context.WithTimeout for a bounded total timeout to avoid memory leaks from time.After.
+// Blocks until either: all numCoupons requests are received, or timeout (3 seconds) is reached.
+// This ensures we give pending requests time to arrive while preventing indefinite blocking.
 func receiveGrabRequests(grabRequestChan <-chan *struct {
 	UserId int
 }, numCoupons int) map[int]int {
 	reservedUsers := make(map[int]int)
-	timer := time.NewTimer(3 * time.Second)
-	defer timer.Stop()
+
+	// Total timeout of 3 seconds - prevents indefinite blocking while giving requests time to arrive
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
 
 	requestCount := 0
 	for i := 0; i < numCoupons; i++ {
 		select {
 		case grabRequest := <-grabRequestChan:
-			// Reset timer after each request (per-request timeout)
-			if !timer.Stop() {
-				select {
-				case <-timer.C:
-				default:
-				}
-			}
-			timer.Reset(3 * time.Second)
 			reservedUsers[grabRequest.UserId]++
 			requestCount++
-		case <-timer.C:
+		case <-ctx.Done():
 			log.Default().Printf("timeout waiting for grab requests, received %d/%d requests from %d users",
 				requestCount, numCoupons, len(reservedUsers))
-			return reservedUsers
-		default:
-			// No pending requests in channel, return early to avoid unnecessary blocking
-			if requestCount > 0 {
-				log.Default().Printf("no more pending requests, received %d/%d requests from %d users",
-					requestCount, numCoupons, len(reservedUsers))
-			}
 			return reservedUsers
 		}
 	}
