@@ -193,15 +193,13 @@ func receiveGrabRequests(grabRequestChan <-chan *struct {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	requestCount := 0
 	for i := 0; i < numCoupons; i++ {
 		select {
 		case grabRequest := <-grabRequestChan:
 			reservedUsers[grabRequest.UserId]++
-			requestCount++
 		case <-ctx.Done():
-			log.Default().Printf("timeout waiting for grab requests, received %d/%d requests from %d users",
-				requestCount, numCoupons, len(reservedUsers))
+			log.Default().Printf("timeout waiting for grab requests, received %d/%d requests from %d unique users",
+				i, numCoupons, len(reservedUsers))
 			return reservedUsers
 		}
 	}
