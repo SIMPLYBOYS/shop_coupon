@@ -180,19 +180,27 @@ func isWithinGrabWindow(now int64) bool {
 	return now >= couponTimeConfig.startGrabTime.Load() && now < couponTimeConfig.endGrabTime.Load()
 }
 
-// receiveGrabRequests receives grab requests from the channel
+// receiveGrabRequests receives grab requests from the channel.
+// Uses context.WithTimeout for a bounded total timeout to avoid memory leaks from time.After.
+// Blocks until either: all numCoupons requests are received, or timeout (3 seconds) is reached.
+// This ensures we give pending requests time to arrive while preventing indefinite blocking.
 func receiveGrabRequests(grabRequestChan <-chan *struct {
 	UserId int
 }, numCoupons int) map[int]int {
 	reservedUsers := make(map[int]int)
+
+	// Total timeout of 3 seconds - prevents indefinite blocking while giving requests time to arrive
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
 	for i := 0; i < numCoupons; i++ {
 		select {
 		case grabRequest := <-grabRequestChan:
 			reservedUsers[grabRequest.UserId]++
-		case <-time.After(3 * time.Second):
-			log.Default().Printf("timeout")
-		default:
-			break
+		case <-ctx.Done():
+			log.Default().Printf("timeout waiting for grab requests, received %d/%d requests from %d unique users",
+				i, numCoupons, len(reservedUsers))
+			return reservedUsers
 		}
 	}
 	return reservedUsers
