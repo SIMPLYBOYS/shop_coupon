@@ -181,25 +181,40 @@ func isWithinGrabWindow(now int64) bool {
 }
 
 // receiveGrabRequests receives grab requests from the channel
-// Uses context.WithTimeout for a fixed total timeout to avoid memory leaks from time.After
+// Uses a single reusable timer to avoid memory leaks from time.After in a loop.
+// The timer resets after each received request (per-request timeout of 3 seconds).
+// Returns early if no more requests are pending in the channel.
 func receiveGrabRequests(grabRequestChan <-chan *struct {
 	UserId int
 }, numCoupons int) map[int]int {
 	reservedUsers := make(map[int]int)
-
-	// Use context for cleaner timeout handling - total timeout of 3 seconds
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
+	timer := time.NewTimer(3 * time.Second)
+	defer timer.Stop()
 
 	requestCount := 0
 	for i := 0; i < numCoupons; i++ {
 		select {
 		case grabRequest := <-grabRequestChan:
+			// Reset timer after each request (per-request timeout)
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			timer.Reset(3 * time.Second)
 			reservedUsers[grabRequest.UserId]++
 			requestCount++
-		case <-ctx.Done():
+		case <-timer.C:
 			log.Default().Printf("timeout waiting for grab requests, received %d/%d requests from %d users",
 				requestCount, numCoupons, len(reservedUsers))
+			return reservedUsers
+		default:
+			// No pending requests in channel, return early to avoid unnecessary blocking
+			if requestCount > 0 {
+				log.Default().Printf("no more pending requests, received %d/%d requests from %d users",
+					requestCount, numCoupons, len(reservedUsers))
+			}
 			return reservedUsers
 		}
 	}
