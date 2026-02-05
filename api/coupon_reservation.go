@@ -17,8 +17,9 @@ type getCouponReservationRequest struct {
 	UserID int32 `uri:"user_id" binding:"required,min=1"` // Request struct for getting coupon reservation
 }
 
-// reservationListener listens for reservation requests and handles them
-func reservationListener(ctx context.Context, store *db.Store) {
+// reservationListener listens for reservation requests and handles them.
+// This is a method on Server to access timeConfig via dependency injection.
+func (s *Server) reservationListener(ctx context.Context) {
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 
@@ -28,10 +29,10 @@ func reservationListener(ctx context.Context, store *db.Store) {
 			return
 		case <-ticker.C:
 			now := time.Now().Unix()
-			if now < couponTimeConfig.startReserveTime.Load() || now >= couponTimeConfig.endReserveTime.Load() {
+			if now < s.timeConfig.startReserveTime.Load() || now >= s.timeConfig.endReserveTime.Load() {
 				continue
 			}
-			handleReservations(ctx, store)
+			handleReservations(ctx, s.store)
 		}
 	}
 }
