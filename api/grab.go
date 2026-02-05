@@ -175,9 +175,10 @@ func closeWorkerPool(workPool chan struct{}) {
 	close(workPool)
 }
 
-// isWithinGrabWindow checks if the current time is within the grab window
-func isWithinGrabWindow(now int64) bool {
-	return now >= couponTimeConfig.startGrabTime.Load() && now < couponTimeConfig.endGrabTime.Load()
+// isWithinGrabWindow checks if the current time is within the grab window.
+// timeConfig is passed explicitly to avoid global state (per constitution rule 3.2).
+func isWithinGrabWindow(now int64, tc *timeConfig) bool {
+	return now >= tc.startGrabTime.Load() && now < tc.endGrabTime.Load()
 }
 
 // receiveGrabRequests receives grab requests from the channel.
@@ -339,10 +340,11 @@ func collectUnwinners(reservedUsers map[int]int, winners []int) []int {
 	return unwinners
 }
 
-// handleGrabbing handles the grabbing process for the coupons
+// handleGrabbing handles the grabbing process for the coupons.
+// timeConfig is passed explicitly to avoid global state (per constitution rule 3.2).
 func handleGrabbing(ctx context.Context, store *db.Store, grabRequestChan <-chan *struct {
 	UserId int
-}, numWorkers int) {
+}, numWorkers int, tc *timeConfig) {
 
 	workPool := makeWorkerPool(numWorkers) // Create a pool of workers
 	defer closeWorkerPool(workPool)        // Close the worker pool when the function returns
@@ -359,7 +361,7 @@ func handleGrabbing(ctx context.Context, store *db.Store, grabRequestChan <-chan
 		case <-ticker.C:
 			now := time.Now().Unix()
 
-			if !isWithinGrabWindow(now) { // Check if it's within the grab time window
+			if !isWithinGrabWindow(now, tc) { // Check if it's within the grab time window
 				continue
 			}
 

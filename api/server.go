@@ -25,9 +25,6 @@ type timeConfig struct {
 	endGrabTime      atomic.Int64
 }
 
-// couponTimeConfig is the package-level time configuration with atomic access
-var couponTimeConfig = &timeConfig{}
-
 type Server struct {
 	store                 *db.Store
 	router                *gin.Engine
@@ -38,6 +35,7 @@ type Server struct {
 	grabRequestChan       chan *struct{ UserId int }
 	numWorkers            int
 	rateLimiter           *rateLimiter // Rate limiter for API requests
+	timeConfig            *timeConfig  // Time window configuration (injected dependency)
 }
 
 const (
@@ -72,7 +70,7 @@ func (s *Server) resetBloomFilterDaily(ctx context.Context) {
 }
 
 // couponClockTimer updates the time windows for reservation and grab requests
-func couponClockTimer(ctx context.Context) {
+func (s *Server) couponClockTimer(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
@@ -82,12 +80,12 @@ func couponClockTimer(ctx context.Context) {
 			return
 		case <-ticker.C:
 			startReserve := u.GetSpecificTime(ReserveStartHour, ReserveStartMin, 0).Unix()
-			couponTimeConfig.startReserveTime.Store(startReserve)
-			couponTimeConfig.endReserveTime.Store(startReserve + 5*60)
+			s.timeConfig.startReserveTime.Store(startReserve)
+			s.timeConfig.endReserveTime.Store(startReserve + 5*60)
 
 			startGrab := u.GetSpecificTime(GrabStartHour, GrabStartMin, 0).Unix()
-			couponTimeConfig.startGrabTime.Store(startGrab)
-			couponTimeConfig.endGrabTime.Store(startGrab + 60)
+			s.timeConfig.startGrabTime.Store(startGrab)
+			s.timeConfig.endGrabTime.Store(startGrab + 60)
 		}
 	}
 }
@@ -101,6 +99,7 @@ func NewServer(store *db.Store, bfr *bloom.BloomFilter, bfg *bloom.BloomFilter, 
 		grabRequestChan:       grabRC,
 		numWorkers:            numWorkers,
 		rateLimiter:           newRateLimiter(60, time.Minute), // 60 requests per minute per IP
+		timeConfig:            &timeConfig{},                   // Initialize time config (injected dependency)
 	}
 
 	router := gin.Default()
@@ -120,7 +119,7 @@ func NewServer(store *db.Store, bfr *bloom.BloomFilter, bfg *bloom.BloomFilter, 
 	}
 
 	// Time-restricted + Authenticated routes (check time window first for early rejection)
-	authenticatedTimeRestricted := router.Group("/", specialTime, authMiddleware())
+	authenticatedTimeRestricted := router.Group("/", server.specialTimeMiddleware(), authMiddleware())
 	{
 		authenticatedTimeRestricted.POST("/reserve", server.createCouponReservation)
 		authenticatedTimeRestricted.POST("/grab", server.handleGrabRequest)
@@ -206,10 +205,10 @@ func errorResponse(err error) gin.H {
 // Start starts background goroutines and the HTTP server.
 // The context is used for graceful shutdown of background tasks.
 func (s *Server) Start(ctx context.Context, address string) error {
-	go couponClockTimer(ctx)
-	go reservationListener(ctx, s.store)
+	go s.couponClockTimer(ctx)
+	go s.reservationListener(ctx)
 	go s.resetBloomFilterDaily(ctx)
-	go handleGrabbing(ctx, s.store, s.grabRequestChan, s.numWorkers)
+	go handleGrabbing(ctx, s.store, s.grabRequestChan, s.numWorkers, s.timeConfig)
 	s.rateLimiter.startCleanup(ctx)
 
 	return s.router.Run(address)
