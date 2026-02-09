@@ -70,10 +70,15 @@ func (q *Queries) batchCreateCouponsChunk(ctx context.Context, codes []string, d
 
 	result, err := q.db.ExecContext(ctx, query, valueArgs...)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("batch create coupons chunk exec: %w", err)
 	}
 
-	return result.RowsAffected()
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("batch create coupons chunk rows affected: %w", err)
+	}
+
+	return rowsAffected, nil
 }
 
 // BatchMarkCouponReservationsAsProcessed marks multiple coupon reservations as processed
@@ -85,7 +90,11 @@ func (q *Queries) BatchMarkCouponReservationsAsProcessed(ctx context.Context, id
 
 	query := "UPDATE coupon_reservations SET is_processed = TRUE WHERE id = ANY($1)"
 	_, err := q.db.ExecContext(ctx, query, pq.Array(ids))
-	return err
+	if err != nil {
+		return fmt.Errorf("batch mark reservations as processed: %w", err)
+	}
+
+	return nil
 }
 
 // BatchAssignCouponsToUsersParams holds parameters for batch coupon assignment
@@ -117,10 +126,15 @@ func (q *Queries) BatchAssignCouponsToUsers(ctx context.Context, params BatchAss
 
 	result, err := q.db.ExecContext(ctx, query, pq.Array(params.CouponIDs), pq.Array(params.UserIDs))
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("batch assign coupons to users: %w", err)
 	}
 
-	return result.RowsAffected()
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("batch assign coupons to users rows affected: %w", err)
+	}
+
+	return rowsAffected, nil
 }
 
 // BatchCreateCouponsWithTx creates multiple coupons in a transaction for atomicity
@@ -137,19 +151,19 @@ func (s *Store) BatchCreateCouponsWithTx(ctx context.Context, params BatchCreate
 	// Create coupons
 	created, err := qtx.BatchCreateCoupons(ctx, params)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("batch create coupons: %w", err)
 	}
 
 	// Mark reservations as processed
 	if len(reservationIDs) > 0 {
 		err = qtx.BatchMarkCouponReservationsAsProcessed(ctx, reservationIDs)
 		if err != nil {
-			return 0, err
+			return 0, fmt.Errorf("mark reservations as processed: %w", err)
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return 0, err
+		return 0, fmt.Errorf("commit transaction: %w", err)
 	}
 
 	return created, nil
