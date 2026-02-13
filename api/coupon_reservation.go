@@ -37,11 +37,16 @@ func (s *Server) reservationListener(ctx context.Context) {
 	}
 }
 
-// handleReservations processes the coupon reservations
-// Uses a limit to prevent DoS attacks from overwhelming the system with unlimited reservations
-func handleReservations(ctx context.Context, store *db.Store) {
-	const maxReservationsPerCycle = 10000
+// Reservation processing constants. Changes affect coupon distribution volume and DB load.
+const (
+	maxReservationsPerCycle = 10000 // Maximum reservations to process per cycle
+	couponWinnerRatio      = 0.2   // 20% of reservations will receive coupons
+	reservationBatchSize   = 3000  // Batch size for processing reservations
+)
 
+// handleReservations processes the coupon reservations.
+// Uses a limit to prevent DoS attacks from overwhelming the system with unlimited reservations.
+func handleReservations(ctx context.Context, store *db.Store) {
 	log.Default().Printf("handleReservations ===============>")
 	reservations, err := store.Queries.ListCouponReservationsWithLimit(ctx, maxReservationsPerCycle)
 	if err != nil {
@@ -50,12 +55,11 @@ func handleReservations(ctx context.Context, store *db.Store) {
 	}
 
 	numReservations := len(reservations)
-	numCoupons := int(float64(numReservations) * 0.2) // 20% of reservations will receive coupons
+	numCoupons := int(float64(numReservations) * couponWinnerRatio)
 
 	// Process reservations in batches
-	batchSize := 3000 // Adjust batch size as needed
-	for i := 0; i < numReservations; i += batchSize {
-		end := i + batchSize
+	for i := 0; i < numReservations; i += reservationBatchSize {
+		end := i + reservationBatchSize
 		if end > numReservations {
 			end = numReservations
 		}
