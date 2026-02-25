@@ -21,11 +21,14 @@ type errorMap = map[string]any
 
 // writeJSON writes a JSON response with the given status code and data.
 func writeJSON(w http.ResponseWriter, status int, data any) {
+	buf, err := json.Marshal(data)
+	if err != nil {
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
-	}
+	w.Write(buf) //nolint:errcheck // write error is not recoverable after header is sent
 }
 
 // parsePathInt32 extracts a path parameter by name and returns it as int32.
