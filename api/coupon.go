@@ -22,7 +22,7 @@ func (s *Server) getCoupon(ctx *gin.Context) {
 	// Get authenticated user ID
 	userID, err := getUserIDFromContext(ctx)
 	if err != nil {
-		if errors.Is(err, ErrUnauthorized) {
+		if errors.Is(err, errUnauthorized) {
 			ctx.JSON(http.StatusUnauthorized, errorResponse(err))
 		} else {
 			ctx.JSON(http.StatusInternalServerError, errorResponse(err))
@@ -42,7 +42,7 @@ func (s *Server) getCoupon(ctx *gin.Context) {
 
 	// Authorization check: only coupon owner can view the coupon
 	if !coupon.UserID.Valid || coupon.UserID.Int32 != userID {
-		ctx.JSON(http.StatusForbidden, errorResponse(ErrAccessDenied))
+		ctx.JSON(http.StatusForbidden, errorResponse(errAccessDenied))
 		return
 	}
 

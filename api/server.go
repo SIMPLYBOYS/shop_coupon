@@ -173,9 +173,9 @@ func isPublicError(err error) bool {
 func errorResponse(err error) gin.H {
 	// Check for known safe sentinel errors (no logging needed)
 	switch {
-	case errors.Is(err, ErrUnauthorized):
+	case errors.Is(err, errUnauthorized):
 		return gin.H{"error": "unauthorized"}
-	case errors.Is(err, ErrAccessDenied):
+	case errors.Is(err, errAccessDenied):
 		return gin.H{"error": "access denied"}
 	}
 

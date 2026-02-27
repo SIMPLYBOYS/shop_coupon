@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Note: ErrUnauthorized, ErrAccessDenied are defined in middleware.go
+// Note: errUnauthorized, errAccessDenied are defined in middleware.go
 
 type getUserRequest struct {
 	ID int32 `uri:"id" binding:"required,min=1"`
@@ -24,7 +24,7 @@ func (s *Server) getUser(ctx *gin.Context) {
 	// Authorization check: ensure user can only access their own data
 	userID, err := getUserIDFromContext(ctx)
 	if err != nil {
-		if errors.Is(err, ErrUnauthorized) {
+		if errors.Is(err, errUnauthorized) {
 			ctx.JSON(http.StatusUnauthorized, errorResponse(err))
 		} else {
 			ctx.JSON(http.StatusInternalServerError, errorResponse(err))
@@ -33,7 +33,7 @@ func (s *Server) getUser(ctx *gin.Context) {
 	}
 
 	if userID != req.ID {
-		ctx.JSON(http.StatusForbidden, errorResponse(ErrAccessDenied))
+		ctx.JSON(http.StatusForbidden, errorResponse(errAccessDenied))
 		return
 	}
 

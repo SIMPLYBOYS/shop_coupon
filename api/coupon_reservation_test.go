@@ -46,7 +46,7 @@ func setupAuthTestRouter() *gin.Engine {
 
 			userID, err := getUserIDFromContext(c)
 			if err != nil {
-				if errors.Is(err, ErrUnauthorized) {
+				if errors.Is(err, errUnauthorized) {
 					c.JSON(http.StatusUnauthorized, errorResponse(err))
 				} else {
 					c.JSON(http.StatusInternalServerError, errorResponse(err))
@@ -55,7 +55,7 @@ func setupAuthTestRouter() *gin.Engine {
 			}
 
 			if userID != req.UserID {
-				c.JSON(http.StatusForbidden, errorResponse(ErrAccessDenied))
+				c.JSON(http.StatusForbidden, errorResponse(errAccessDenied))
 				return
 			}
 
@@ -334,14 +334,14 @@ func TestAuthMiddleware(t *testing.T) {
 func TestGetUserIDFromContext(t *testing.T) {
 	t.Parallel()
 
-	t.Run("returns ErrUnauthorized when user ID not in context", func(t *testing.T) {
+	t.Run("returns errUnauthorized when user ID not in context", func(t *testing.T) {
 		t.Parallel()
 		c, _ := gin.CreateTestContext(httptest.NewRecorder())
 
 		userID, err := getUserIDFromContext(c)
 
 		require.Error(t, err)
-		require.True(t, errors.Is(err, ErrUnauthorized))
+		require.True(t, errors.Is(err, errUnauthorized))
 		require.Equal(t, int32(0), userID)
 	})
 
@@ -356,7 +356,7 @@ func TestGetUserIDFromContext(t *testing.T) {
 		require.Equal(t, int32(42), userID)
 	})
 
-	t.Run("returns ErrInternalServerError when user ID has wrong type", func(t *testing.T) {
+	t.Run("returns errInternalServerError when user ID has wrong type", func(t *testing.T) {
 		t.Parallel()
 		c, _ := gin.CreateTestContext(httptest.NewRecorder())
 		c.Set(authUserIDKey, "not-an-int")
@@ -364,7 +364,7 @@ func TestGetUserIDFromContext(t *testing.T) {
 		userID, err := getUserIDFromContext(c)
 
 		require.Error(t, err)
-		require.True(t, errors.Is(err, ErrInternalServerError))
+		require.True(t, errors.Is(err, errInternalServerError))
 		require.Equal(t, int32(0), userID)
 	})
 

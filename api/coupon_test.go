@@ -33,7 +33,7 @@ func setupCouponTestRouter(coupons map[string]mockCoupon) *gin.Engine {
 
 			userID, err := getUserIDFromContext(c)
 			if err != nil {
-				if errors.Is(err, ErrUnauthorized) {
+				if errors.Is(err, errUnauthorized) {
 					c.JSON(http.StatusUnauthorized, errorResponse(err))
 				} else {
 					c.JSON(http.StatusInternalServerError, errorResponse(err))
@@ -49,7 +49,7 @@ func setupCouponTestRouter(coupons map[string]mockCoupon) *gin.Engine {
 
 			// Authorization check: only coupon owner can view the coupon
 			if !coupon.UserID.Valid || coupon.UserID.Int32 != userID {
-				c.JSON(http.StatusForbidden, errorResponse(ErrAccessDenied))
+				c.JSON(http.StatusForbidden, errorResponse(errAccessDenied))
 				return
 			}
 
