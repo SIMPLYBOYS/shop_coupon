@@ -112,11 +112,11 @@ const (
 	authUserIDKey = "api_auth_user_id"
 )
 
-// Sentinel errors for authentication and authorization
+// sentinel errors for authentication and authorization
 var (
-	ErrUnauthorized        = errors.New("unauthorized")
-	ErrAccessDenied        = errors.New("access denied")
-	ErrInternalServerError = errors.New("internal server error")
+	errUnauthorized        = errors.New("unauthorized")
+	errAccessDenied        = errors.New("access denied")
+	errInternalServerError = errors.New("internal server error")
 )
 
 // authMiddleware validates the X-User-ID header and stores the user ID in context
@@ -148,13 +148,13 @@ func authMiddleware() gin.HandlerFunc {
 func getUserIDFromContext(ctx *gin.Context) (int32, error) {
 	authUserID, exists := ctx.Get(authUserIDKey)
 	if !exists {
-		return 0, ErrUnauthorized
+		return 0, errUnauthorized
 	}
 
 	userID, ok := authUserID.(int32)
 	if !ok {
 		log.Printf("ERROR: invalid user ID type in context: %T", authUserID)
-		return 0, ErrInternalServerError
+		return 0, errInternalServerError
 	}
 
 	return userID, nil
@@ -166,7 +166,7 @@ func getUserIDFromContext(ctx *gin.Context) (int32, error) {
 func checkUserAuthorization(ctx *gin.Context, requestedUserID int32) error {
 	authUserID, err := getUserIDFromContext(ctx)
 	if err != nil {
-		if errors.Is(err, ErrUnauthorized) {
+		if errors.Is(err, errUnauthorized) {
 			ctx.JSON(http.StatusUnauthorized, errorResponse(err))
 		} else {
 			ctx.JSON(http.StatusInternalServerError, errorResponse(err))
@@ -175,8 +175,8 @@ func checkUserAuthorization(ctx *gin.Context, requestedUserID int32) error {
 	}
 
 	if authUserID != requestedUserID {
-		ctx.JSON(http.StatusForbidden, errorResponse(ErrAccessDenied))
-		return ErrAccessDenied
+		ctx.JSON(http.StatusForbidden, errorResponse(errAccessDenied))
+		return errAccessDenied
 	}
 
 	return nil
