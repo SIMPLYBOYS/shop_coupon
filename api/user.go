@@ -8,7 +8,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Note: errUnauthorized, errAccessDenied are defined in middleware.go
 
 type getUserRequest struct {
 	ID int32 `uri:"id" binding:"required,min=1"`

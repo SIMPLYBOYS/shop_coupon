@@ -334,7 +334,7 @@ func TestAuthMiddleware(t *testing.T) {
 func TestGetUserIDFromContext(t *testing.T) {
 	t.Parallel()
 
-	t.Run("returns errUnauthorized when user ID not in context", func(t *testing.T) {
+	t.Run("returns unauthorized error when user ID not in context", func(t *testing.T) {
 		t.Parallel()
 		c, _ := gin.CreateTestContext(httptest.NewRecorder())
 
@@ -356,7 +356,7 @@ func TestGetUserIDFromContext(t *testing.T) {
 		require.Equal(t, int32(42), userID)
 	})
 
-	t.Run("returns errInternalServerError when user ID has wrong type", func(t *testing.T) {
+	t.Run("returns internal server error when user ID has wrong type", func(t *testing.T) {
 		t.Parallel()
 		c, _ := gin.CreateTestContext(httptest.NewRecorder())
 		c.Set(authUserIDKey, "not-an-int")

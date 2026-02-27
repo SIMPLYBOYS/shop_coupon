@@ -112,7 +112,7 @@ const (
 	authUserIDKey = "api_auth_user_id"
 )
 
-// sentinel errors for authentication and authorization (unexported to comply with constitution 3.2)
+// sentinel errors for authentication and authorization
 var (
 	errUnauthorized        = errors.New("unauthorized")
 	errAccessDenied        = errors.New("access denied")
