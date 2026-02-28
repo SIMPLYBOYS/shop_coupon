@@ -50,7 +50,7 @@ func handleReservations(ctx context.Context, store *db.Store) {
 	log.Default().Printf("handleReservations ===============>")
 	reservations, err := store.Queries.ListCouponReservationsWithLimit(ctx, maxReservationsPerCycle)
 	if err != nil {
-		log.Println("handleReservations error:", err)
+		log.Printf("handleReservations: listing reservations: %v", err)
 		return
 	}
 
