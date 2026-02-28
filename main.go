@@ -41,7 +41,7 @@ func main() {
 	dbPool, err := sql.Open(dbDriver, getDBSource())
 
 	if err != nil {
-		log.Fatal("cannot connect to db:", err)
+		log.Fatalf("cannot open database: %v", err)
 	}
 
 	// Set the maximum number of open connections

@@ -368,7 +368,7 @@ func handleGrabbing(ctx context.Context, store *db.Store, grabRequestChan <-chan
 			if len(coupons) == 0 { // If there are no coupons, fetch available coupons
 				coupons, err = store.Queries.ListAvailableCoupons(ctx, time.Now())
 				if err != nil {
-					log.Println("handleGrabbing error:", err)
+					log.Printf("handleGrabbing: listing available coupons: %v", err)
 					continue
 				}
 			}
