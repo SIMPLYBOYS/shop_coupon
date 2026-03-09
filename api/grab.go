@@ -2,10 +2,8 @@ package api
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"log"
-	"math/big"
 	"net/http"
 	"strconv"
 	"sync"
@@ -28,70 +26,6 @@ func selectWinnersSimple(reservedUsers map[int]int, numWinners int) []int {
 			break
 		}
 	}
-	return winners
-}
-
-// selectWinners selects the winners from the reserved users based on their weights
-func selectWinners(reservedUsers map[int]int, numWinners int) []int {
-	users := make([]User, 0, len(reservedUsers))
-	totalWeight := 0
-	for userID, weight := range reservedUsers {
-		totalWeight += weight
-		users = append(users, User{ID: userID, Weight: weight})
-	}
-
-	// Ensure we don't try to select more winners than available users
-	if numWinners > len(users) {
-		numWinners = len(users)
-	}
-
-	winners := make([]int, 0, numWinners)
-	remainingWeight := totalWeight
-	const maxRetries = 3
-
-	for len(winners) < numWinners && len(users) > 0 {
-		// Ensure remainingWeight is positive before calling rand.Int
-		if remainingWeight <= 0 {
-			log.Printf("selectWinners: remainingWeight is %d, stopping selection", remainingWeight)
-			break
-		}
-
-		var target *big.Int
-		var err error
-		for retry := 0; retry < maxRetries; retry++ {
-			target, err = rand.Int(rand.Reader, big.NewInt(int64(remainingWeight)))
-			if err == nil {
-				break
-			}
-			log.Printf("selectWinners rand.Int error (retry %d/%d): %v", retry+1, maxRetries, err)
-		}
-		if err != nil {
-			log.Printf("selectWinners: rand.Int failed after %d retries, selecting first available user", maxRetries)
-			// Fallback: select the first available user
-			target = big.NewInt(0)
-		}
-
-		j := 0
-		cumWeight := 0
-		for j < len(users) {
-			cumWeight += users[j].Weight
-			if cumWeight > int(target.Int64()) {
-				break
-			}
-			j++
-		}
-
-		// Safety check: ensure j is within bounds
-		if j >= len(users) {
-			j = len(users) - 1
-		}
-
-		remainingWeight -= users[j].Weight
-		winners = append(winners, users[j].ID)
-		users[j], users[len(users)-1] = users[len(users)-1], users[j]
-		users = users[:len(users)-1]
-	}
-
 	return winners
 }
 
@@ -154,11 +88,6 @@ func (s *Server) handleGrabRequest(ctx *gin.Context) {
 		ctx.JSON(http.StatusTooManyRequests, gin.H{"error": "too many requests"})
 		return
 	}
-}
-
-type User struct {
-	ID     int
-	Weight int
 }
 
 // makeWorkerPool creates a pool of workers
