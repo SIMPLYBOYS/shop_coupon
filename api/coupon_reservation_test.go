@@ -15,14 +15,14 @@ import (
 
 // Test constants for readability and maintainability
 const (
-	validUserID       = "1"
-	anotherUserID     = "2"
-	largeValidUserID  = "999999"
-	int32MaxValue     = "2147483647" // math.MaxInt32
-	overflowUserID    = "9999999999999999999"
-	invalidUserID     = "invalid"
-	negativeUserID    = "-1"
-	zeroUserID        = "0"
+	validUserID      = "1"
+	anotherUserID    = "2"
+	largeValidUserID = "999999"
+	int32MaxValue    = "2147483647" // math.MaxInt32
+	overflowUserID   = "9999999999999999999"
+	invalidUserID    = "invalid"
+	negativeUserID   = "-1"
+	zeroUserID       = "0"
 )
 
 func init() {
@@ -394,11 +394,11 @@ func TestPartitionReservations(t *testing.T) {
 	}
 
 	tests := []struct {
-		name             string
-		reservations     []db.CouponReservations
-		numCoupons       int
-		expectedWinners  int
-		expectedNonWin   int
+		name            string
+		reservations    []db.CouponReservations
+		numCoupons      int
+		expectedWinners int
+		expectedNonWin  int
 	}{
 		{
 			name:            "all reservations are winners",

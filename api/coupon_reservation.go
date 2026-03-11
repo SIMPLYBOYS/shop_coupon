@@ -39,9 +39,11 @@ func (s *Server) reservationListener(ctx context.Context) {
 
 // Reservation processing constants. Changes affect coupon distribution volume and DB load.
 const (
-	maxReservationsPerCycle = 10000 // Maximum reservations to process per cycle
-	couponWinnerRatio      = 0.2   // 20% of reservations will receive coupons
-	reservationBatchSize   = 3000  // Batch size for processing reservations
+	maxReservationsPerCycle = 10000  // Maximum reservations to process per cycle
+	couponWinnerRatio       = 0.2    // 20% of reservations will receive coupons
+	reservationBatchSize    = 3000   // Batch size for processing reservations
+	defaultDiscount         = "0.25" // 25% discount for generated coupons
+	couponExpiryDays        = 7      // Number of days until generated coupons expire
 )
 
 // handleReservations processes the coupon reservations.
@@ -171,6 +173,8 @@ func partitionReservations(reservations []db.CouponReservations, numCoupons int)
 
 	// Use three-index slice to limit capacity, preventing append on winners
 	// from silently overwriting nonWinners data.
+	// nonWinners extends to the end of the underlying array, so there is no
+	// overwrite risk from its side — only winners needs capacity restriction.
 	winners = reservations[:numCoupons:numCoupons]
 	nonWinners = reservations[numCoupons:]
 	return winners, nonWinners
@@ -182,6 +186,7 @@ func partitionReservations(reservations []db.CouponReservations, numCoupons int)
 func generateCodesForWinners(winners []db.CouponReservations) (codes []string, reservationIDs []int32, failedIDs []int32) {
 	codes = make([]string, 0, len(winners))
 	reservationIDs = make([]int32, 0, len(winners))
+	failedIDs = make([]int32, 0)
 
 	for _, w := range winners {
 		code, err := u.GenerateCouponCode()
@@ -198,10 +203,11 @@ func generateCodesForWinners(winners []db.CouponReservations) (codes []string, r
 
 // createCouponsForWinners creates coupons and marks winner reservations as processed atomically.
 // Falls back to individual creation if the batch operation fails.
-// Panics if codes and reservationIDs have different lengths (indicates a programming error).
+// Returns 0 immediately if codes and reservationIDs have mismatched lengths.
 func createCouponsForWinners(ctx context.Context, store *db.Store, codes []string, reservationIDs []int32) int {
 	if len(codes) != len(reservationIDs) {
-		log.Panicf("createCouponsForWinners: codes length (%d) != reservationIDs length (%d)", len(codes), len(reservationIDs))
+		log.Printf("createCouponsForWinners: codes/reservationIDs length mismatch (%d vs %d)", len(codes), len(reservationIDs))
+		return 0
 	}
 	if len(codes) == 0 {
 		return 0
@@ -209,8 +215,8 @@ func createCouponsForWinners(ctx context.Context, store *db.Store, codes []strin
 
 	batchParams := db.BatchCreateCouponsParams{
 		Codes:      codes,
-		Discount:   "0.25",                      // 25% discount
-		ExpiryDate: time.Now().AddDate(0, 0, 7), // Expiry date is 7 days from now
+		Discount:   defaultDiscount,
+		ExpiryDate: time.Now().AddDate(0, 0, couponExpiryDays),
 	}
 
 	created, err := store.BatchCreateCouponsWithTx(ctx, batchParams, reservationIDs)
@@ -270,7 +276,11 @@ func generateCouponsForReservations(ctx context.Context, store *db.Store, reserv
 	}
 
 	couponsGenerated := createCouponsForWinners(ctx, store, codes, winnerIDs)
-	markNonWinnersProcessed(ctx, store, nonWinners)
+
+	markedCount := markNonWinnersProcessed(ctx, store, nonWinners)
+	if markedCount < len(nonWinners) {
+		log.Printf("generateCouponsForReservations: only marked %d/%d non-winners as processed", markedCount, len(nonWinners))
+	}
 
 	return couponsGenerated
 }
