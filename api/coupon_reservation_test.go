@@ -8,20 +8,21 @@ import (
 	"strconv"
 	"testing"
 
+	db "github.com/SIMPLYBOYS/shopcoupon/db/sqlc"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
 // Test constants for readability and maintainability
 const (
-	validUserID       = "1"
-	anotherUserID     = "2"
-	largeValidUserID  = "999999"
-	int32MaxValue     = "2147483647" // math.MaxInt32
-	overflowUserID    = "9999999999999999999"
-	invalidUserID     = "invalid"
-	negativeUserID    = "-1"
-	zeroUserID        = "0"
+	validUserID      = "1"
+	anotherUserID    = "2"
+	largeValidUserID = "999999"
+	int32MaxValue    = "2147483647" // math.MaxInt32
+	overflowUserID   = "9999999999999999999"
+	invalidUserID    = "invalid"
+	negativeUserID   = "-1"
+	zeroUserID       = "0"
 )
 
 func init() {
@@ -378,4 +379,111 @@ func TestGetUserIDFromContext(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, int32(math.MaxInt32), userID)
 	})
+}
+
+// TestPartitionReservations tests that reservations are correctly split into winners and non-winners.
+func TestPartitionReservations(t *testing.T) {
+	t.Parallel()
+
+	makeReservations := func(ids ...int32) []db.CouponReservations {
+		res := make([]db.CouponReservations, len(ids))
+		for i, id := range ids {
+			res[i] = db.CouponReservations{ID: id}
+		}
+		return res
+	}
+
+	tests := []struct {
+		name            string
+		reservations    []db.CouponReservations
+		numCoupons      int
+		expectedWinners int
+		expectedNonWin  int
+	}{
+		{
+			name:            "all reservations are winners",
+			reservations:    makeReservations(1, 2, 3),
+			numCoupons:      3,
+			expectedWinners: 3,
+			expectedNonWin:  0,
+		},
+		{
+			name:            "no winners",
+			reservations:    makeReservations(1, 2, 3),
+			numCoupons:      0,
+			expectedWinners: 0,
+			expectedNonWin:  3,
+		},
+		{
+			name:            "partial winners",
+			reservations:    makeReservations(1, 2, 3, 4, 5),
+			numCoupons:      2,
+			expectedWinners: 2,
+			expectedNonWin:  3,
+		},
+		{
+			name:            "numCoupons exceeds reservations count",
+			reservations:    makeReservations(1, 2),
+			numCoupons:      10,
+			expectedWinners: 2,
+			expectedNonWin:  0,
+		},
+		{
+			name:            "empty reservations",
+			reservations:    makeReservations(),
+			numCoupons:      5,
+			expectedWinners: 0,
+			expectedNonWin:  0,
+		},
+		{
+			name:            "single reservation is winner",
+			reservations:    makeReservations(42),
+			numCoupons:      1,
+			expectedWinners: 1,
+			expectedNonWin:  0,
+		},
+		{
+			name:            "single reservation is non-winner",
+			reservations:    makeReservations(42),
+			numCoupons:      0,
+			expectedWinners: 0,
+			expectedNonWin:  1,
+		},
+		{
+			name:            "negative numCoupons treated as zero",
+			reservations:    makeReservations(1, 2, 3),
+			numCoupons:      -1,
+			expectedWinners: 0,
+			expectedNonWin:  3,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			winners, nonWinners := partitionReservations(tc.reservations, tc.numCoupons)
+
+			require.Len(t, winners, tc.expectedWinners)
+			require.Len(t, nonWinners, tc.expectedNonWin)
+			require.Equal(t, len(tc.reservations), len(winners)+len(nonWinners))
+		})
+	}
+}
+
+// TestPartitionReservations_SliceIsolation verifies that winners and nonWinners
+// slices are capacity-isolated, so appending to winners cannot corrupt nonWinners.
+func TestPartitionReservations_SliceIsolation(t *testing.T) {
+	t.Parallel()
+
+	reservations := []db.CouponReservations{
+		{ID: 1}, {ID: 2}, {ID: 3}, {ID: 4}, {ID: 5},
+	}
+
+	winners, nonWinners := partitionReservations(reservations, 2)
+
+	// Append to winners — must not overwrite nonWinners[0]
+	winners = append(winners, db.CouponReservations{ID: 99})
+
+	require.Equal(t, int32(3), nonWinners[0].ID, "append to winners must not corrupt nonWinners")
 }
