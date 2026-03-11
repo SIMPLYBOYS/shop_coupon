@@ -160,13 +160,18 @@ func (s *Server) createCouponReservation(ctx *gin.Context) {
 }
 
 // partitionReservations splits reservations into winners (who get coupons) and non-winners.
-// The first numCoupons reservations are winners; the rest are non-winners.
+// numCoupons is clamped to [0, len(reservations)], so winners may be fewer than requested.
 func partitionReservations(reservations []db.CouponReservations, numCoupons int) (winners, nonWinners []db.CouponReservations) {
+	if numCoupons < 0 {
+		numCoupons = 0
+	}
 	if numCoupons > len(reservations) {
 		numCoupons = len(reservations)
 	}
 
-	winners = reservations[:numCoupons]
+	// Use three-index slice to limit capacity, preventing append on winners
+	// from silently overwriting nonWinners data.
+	winners = reservations[:numCoupons:numCoupons]
 	nonWinners = reservations[numCoupons:]
 	return winners, nonWinners
 }
@@ -193,7 +198,11 @@ func generateCodesForWinners(winners []db.CouponReservations) (codes []string, r
 
 // createCouponsForWinners creates coupons and marks winner reservations as processed atomically.
 // Falls back to individual creation if the batch operation fails.
+// Panics if codes and reservationIDs have different lengths (indicates a programming error).
 func createCouponsForWinners(ctx context.Context, store *db.Store, codes []string, reservationIDs []int32) int {
+	if len(codes) != len(reservationIDs) {
+		log.Panicf("createCouponsForWinners: codes length (%d) != reservationIDs length (%d)", len(codes), len(reservationIDs))
+	}
 	if len(codes) == 0 {
 		return 0
 	}
@@ -216,9 +225,10 @@ func createCouponsForWinners(ctx context.Context, store *db.Store, codes []strin
 
 // markNonWinnersProcessed marks non-winner reservations as processed.
 // Falls back to individual marking if the batch operation fails.
-func markNonWinnersProcessed(ctx context.Context, store *db.Store, nonWinners []db.CouponReservations) {
+// Returns the number of reservations successfully marked.
+func markNonWinnersProcessed(ctx context.Context, store *db.Store, nonWinners []db.CouponReservations) int {
 	if len(nonWinners) == 0 {
-		return
+		return 0
 	}
 
 	ids := make([]int32, len(nonWinners))
@@ -238,7 +248,10 @@ func markNonWinnersProcessed(ctx context.Context, store *db.Store, nonWinners []
 			}
 		}
 		log.Printf("markNonWinnersProcessed: fallback marked %d/%d non-winner reservations", successCount, len(ids))
+		return successCount
 	}
+
+	return len(ids)
 }
 
 // generateCouponsForReservations orchestrates coupon generation for a batch of reservations.

@@ -449,6 +449,13 @@ func TestPartitionReservations(t *testing.T) {
 			expectedWinners: 0,
 			expectedNonWin:  1,
 		},
+		{
+			name:            "negative numCoupons treated as zero",
+			reservations:    makeReservations(1, 2, 3),
+			numCoupons:      -1,
+			expectedWinners: 0,
+			expectedNonWin:  3,
+		},
 	}
 
 	for _, tc := range tests {
@@ -462,4 +469,21 @@ func TestPartitionReservations(t *testing.T) {
 			require.Equal(t, len(tc.reservations), len(winners)+len(nonWinners))
 		})
 	}
+}
+
+// TestPartitionReservations_SliceIsolation verifies that winners and nonWinners
+// slices are capacity-isolated, so appending to winners cannot corrupt nonWinners.
+func TestPartitionReservations_SliceIsolation(t *testing.T) {
+	t.Parallel()
+
+	reservations := []db.CouponReservations{
+		{ID: 1}, {ID: 2}, {ID: 3}, {ID: 4}, {ID: 5},
+	}
+
+	winners, nonWinners := partitionReservations(reservations, 2)
+
+	// Append to winners — must not overwrite nonWinners[0]
+	winners = append(winners, db.CouponReservations{ID: 99})
+
+	require.Equal(t, int32(3), nonWinners[0].ID, "append to winners must not corrupt nonWinners")
 }
