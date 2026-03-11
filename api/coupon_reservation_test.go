@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"testing"
 
+	db "github.com/SIMPLYBOYS/shopcoupon/db/sqlc"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -378,4 +379,87 @@ func TestGetUserIDFromContext(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, int32(math.MaxInt32), userID)
 	})
+}
+
+// TestPartitionReservations tests that reservations are correctly split into winners and non-winners.
+func TestPartitionReservations(t *testing.T) {
+	t.Parallel()
+
+	makeReservations := func(ids ...int32) []db.CouponReservations {
+		res := make([]db.CouponReservations, len(ids))
+		for i, id := range ids {
+			res[i] = db.CouponReservations{ID: id}
+		}
+		return res
+	}
+
+	tests := []struct {
+		name             string
+		reservations     []db.CouponReservations
+		numCoupons       int
+		expectedWinners  int
+		expectedNonWin   int
+	}{
+		{
+			name:            "all reservations are winners",
+			reservations:    makeReservations(1, 2, 3),
+			numCoupons:      3,
+			expectedWinners: 3,
+			expectedNonWin:  0,
+		},
+		{
+			name:            "no winners",
+			reservations:    makeReservations(1, 2, 3),
+			numCoupons:      0,
+			expectedWinners: 0,
+			expectedNonWin:  3,
+		},
+		{
+			name:            "partial winners",
+			reservations:    makeReservations(1, 2, 3, 4, 5),
+			numCoupons:      2,
+			expectedWinners: 2,
+			expectedNonWin:  3,
+		},
+		{
+			name:            "numCoupons exceeds reservations count",
+			reservations:    makeReservations(1, 2),
+			numCoupons:      10,
+			expectedWinners: 2,
+			expectedNonWin:  0,
+		},
+		{
+			name:            "empty reservations",
+			reservations:    makeReservations(),
+			numCoupons:      5,
+			expectedWinners: 0,
+			expectedNonWin:  0,
+		},
+		{
+			name:            "single reservation is winner",
+			reservations:    makeReservations(42),
+			numCoupons:      1,
+			expectedWinners: 1,
+			expectedNonWin:  0,
+		},
+		{
+			name:            "single reservation is non-winner",
+			reservations:    makeReservations(42),
+			numCoupons:      0,
+			expectedWinners: 0,
+			expectedNonWin:  1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			winners, nonWinners := partitionReservations(tc.reservations, tc.numCoupons)
+
+			require.Len(t, winners, tc.expectedWinners)
+			require.Len(t, nonWinners, tc.expectedNonWin)
+			require.Equal(t, len(tc.reservations), len(winners)+len(nonWinners))
+		})
+	}
 }
