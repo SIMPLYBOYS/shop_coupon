@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
@@ -56,13 +57,11 @@ func (s *Server) handleGrabRequest(ctx *gin.Context) {
 
 	reservation, err := s.store.Queries.GetCouponReservation(ctx, req.UserID)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "no reservation found"})
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
-		return
-	}
-
-	var zeroValue db.CouponReservations
-	if reservation == zeroValue { // Check if the reservation exists
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "no reservation found"})
 		return
 	}
 
