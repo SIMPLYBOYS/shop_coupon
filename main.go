@@ -35,7 +35,7 @@ func main() {
 	grabBloomFilter := bloom.NewWithEstimates(1000000, 0.001)
 
 	// Initialize channel for grab requests
-	grabRequestChan := make(chan *struct{ UserId int }, maxConcurrentRequests)
+	grabRequestChan := make(chan *api.GrabRequest, maxConcurrentRequests)
 
 	// Open a connection to the database
 	dbPool, err := sql.Open(dbDriver, getDBSource())

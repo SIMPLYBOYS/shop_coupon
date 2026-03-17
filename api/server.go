@@ -25,6 +25,11 @@ type timeConfig struct {
 	endGrabTime      atomic.Int64
 }
 
+// GrabRequest represents a user's grab request.
+type GrabRequest struct {
+	UserID int
+}
+
 type Server struct {
 	store                 *db.Store
 	router                *gin.Engine
@@ -32,7 +37,7 @@ type Server struct {
 	bloomFilterForReserve *bloom.BloomFilter // Bloom filter for reservation requests
 	grabBloomMu           sync.RWMutex       // RWMutex to protect bloomFilterForGrab operations
 	reserveBloomMu        sync.RWMutex       // RWMutex to protect bloomFilterForReserve operations
-	grabRequestChan       chan *struct{ UserId int }
+	grabRequestChan       chan *GrabRequest
 	numWorkers            int
 	rateLimiter           *rateLimiter // Rate limiter for API requests
 	timeConfig            *timeConfig  // Time window configuration (injected dependency)
@@ -91,7 +96,7 @@ func (s *Server) couponClockTimer(ctx context.Context) {
 }
 
 // NewServer creates a new server instance
-func NewServer(store *db.Store, bfr *bloom.BloomFilter, bfg *bloom.BloomFilter, grabRC chan *struct{ UserId int }, numWorkers int) *Server {
+func NewServer(store *db.Store, bfr *bloom.BloomFilter, bfg *bloom.BloomFilter, grabRC chan *GrabRequest, numWorkers int) *Server {
 	server := &Server{
 		store:                 store,
 		bloomFilterForReserve: bfr,
