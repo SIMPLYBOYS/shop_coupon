@@ -65,10 +65,8 @@ func (s *Server) handleGrabRequest(ctx *gin.Context) {
 		return
 	}
 
-	grabRequest := &struct {
-		UserId int
-	}{
-		UserId: int(reservation.UserID),
+	grabRequest := &GrabRequest{
+		UserID: int(reservation.UserID),
 	}
 
 	select {
@@ -113,9 +111,7 @@ func isWithinGrabWindow(now int64, tc *timeConfig) bool {
 // Uses context.WithTimeout for a bounded total timeout to avoid memory leaks from time.After.
 // Blocks until either: all numCoupons requests are received, or timeout (3 seconds) is reached.
 // This ensures we give pending requests time to arrive while preventing indefinite blocking.
-func receiveGrabRequests(grabRequestChan <-chan *struct {
-	UserId int
-}, numCoupons int) map[int]int {
+func receiveGrabRequests(grabRequestChan <-chan *GrabRequest, numCoupons int) map[int]int {
 	reservedUsers := make(map[int]int)
 
 	// Total timeout of 3 seconds - prevents indefinite blocking while giving requests time to arrive
@@ -125,7 +121,7 @@ func receiveGrabRequests(grabRequestChan <-chan *struct {
 	for i := 0; i < numCoupons; i++ {
 		select {
 		case grabRequest := <-grabRequestChan:
-			reservedUsers[grabRequest.UserId]++
+			reservedUsers[grabRequest.UserID]++
 		case <-ctx.Done():
 			log.Default().Printf("timeout waiting for grab requests, received %d/%d requests from %d unique users",
 				i, numCoupons, len(reservedUsers))
@@ -270,9 +266,7 @@ func collectUnwinners(reservedUsers map[int]int, winners []int) []int {
 
 // handleGrabbing handles the grabbing process for the coupons.
 // timeConfig is passed explicitly to avoid global state (per constitution rule 3.2).
-func handleGrabbing(ctx context.Context, store *db.Store, grabRequestChan <-chan *struct {
-	UserId int
-}, numWorkers int, tc *timeConfig) {
+func handleGrabbing(ctx context.Context, store *db.Store, grabRequestChan <-chan *GrabRequest, numWorkers int, tc *timeConfig) {
 
 	workPool := makeWorkerPool(numWorkers) // Create a pool of workers
 	defer closeWorkerPool(workPool)        // Close the worker pool when the function returns
