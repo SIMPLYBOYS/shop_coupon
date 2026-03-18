@@ -2,6 +2,7 @@ package util
 
 import (
 	"crypto/rand"
+	"fmt"
 	"math/big"
 	"strings"
 )
@@ -9,47 +10,55 @@ import (
 const alphabet = "abcdefghijklmnopqrstuvwxyz"
 
 // secureRandomInt generates a cryptographically secure random integer in [0, max)
-func secureRandomInt(max int) int {
+func secureRandomInt(max int) (int, error) {
 	if max <= 0 {
-		return 0
+		return 0, fmt.Errorf("max must be positive, got %d", max)
 	}
 	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
 	if err != nil {
-		// Fallback: this should never happen in normal circumstances
-		// as crypto/rand.Reader is always available on supported platforms
-		panic("crypto/rand failed: " + err.Error())
+		return 0, fmt.Errorf("generating secure random int: %w", err)
 	}
-	return int(n.Int64())
+	return int(n.Int64()), nil
 }
 
 // RandomDomain returns a random email domain for testing purposes
-func RandomDomain() string {
-	var sb strings.Builder
-
-	// Append domain name
+func RandomDomain() (string, error) {
 	domain := []string{"gmail.com", "yahoo.com", "hotmail.com", "outlook.com"}
-	sb.WriteString("@")
-	sb.WriteString(domain[secureRandomInt(len(domain))])
-
-	return sb.String()
+	idx, err := secureRandomInt(len(domain))
+	if err != nil {
+		return "", fmt.Errorf("generating random domain: %w", err)
+	}
+	return "@" + domain[idx], nil
 }
 
 // RandomName generates a random username for testing purposes
-func RandomName() string {
+func RandomName() (string, error) {
 	var sb strings.Builder
 	k := len(alphabet)
 
 	// Generate random username
-	usernameLength := secureRandomInt(10) + 5 // Random length between 5 and 14
+	usernameLength, err := secureRandomInt(10)
+	if err != nil {
+		return "", fmt.Errorf("generating random name length: %w", err)
+	}
+	usernameLength += 5 // Random length between 5 and 14
+
 	for i := 0; i < usernameLength; i++ {
-		c := alphabet[secureRandomInt(k)]
-		sb.WriteByte(c)
+		idx, err := secureRandomInt(k)
+		if err != nil {
+			return "", fmt.Errorf("generating random name character at index %d: %w", i, err)
+		}
+		sb.WriteByte(alphabet[idx])
 	}
 
-	return sb.String()
+	return sb.String(), nil
 }
 
 // RandomNumber generates a cryptographically secure random number in [0, 10)
-func RandomNumber() int {
-	return secureRandomInt(10)
+func RandomNumber() (int, error) {
+	n, err := secureRandomInt(10)
+	if err != nil {
+		return 0, fmt.Errorf("generating random number: %w", err)
+	}
+	return n, nil
 }

@@ -8,14 +8,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func generateUserInfo() (string, string) {
-	name := u.RandomName()
-	domain := u.RandomDomain()
+func generateUserInfo(t *testing.T) (string, string) {
+	t.Helper()
+	name, err := u.RandomName()
+	require.NoError(t, err)
+	domain, err := u.RandomDomain()
+	require.NoError(t, err)
 	return name, name + domain
 }
 
 func TestCreateUser(t *testing.T) {
-	name, email := generateUserInfo()
+	name, email := generateUserInfo(t)
 	arg := CreateUserParams{
 		Username: name,
 		Email:   email,
@@ -29,7 +32,7 @@ func TestCreateUser(t *testing.T) {
 }
 
 func TestGetUser(t *testing.T) {
-	name, email := generateUserInfo()
+	name, email := generateUserInfo(t)
 	arg := CreateUserParams{
 		Username: name,
 		Email:   email,
@@ -47,7 +50,7 @@ func TestGetUser(t *testing.T) {
 }
 
 func TestUpdateUser(t *testing.T) {
-	name, email := generateUserInfo()
+	name, email := generateUserInfo(t)
 	arg := CreateUserParams{
 		Username: name,
 		Email:   email,
@@ -56,9 +59,11 @@ func TestUpdateUser(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, user)
 
+	newName, err := u.RandomName()
+	require.NoError(t, err)
 	arg2 := UpdateUserParams{
 		ID: user.ID,
-		Username: u.RandomName(),
+		Username: newName,
 		Email: email,
 	}
 	user2, err := testQueries.UpdateUser(context.Background(), arg2)
@@ -70,7 +75,7 @@ func TestUpdateUser(t *testing.T) {
 }
 
 func TestDeleteUser(t *testing.T) {
-	name, email := generateUserInfo()
+	name, email := generateUserInfo(t)
 	arg := CreateUserParams{
 		Username: name,
 		Email:    email,
