@@ -12,7 +12,7 @@ const alphabet = "abcdefghijklmnopqrstuvwxyz"
 // secureRandomInt generates a cryptographically secure random integer in [0, max)
 func secureRandomInt(max int) (int, error) {
 	if max <= 0 {
-		return 0, nil
+		return 0, fmt.Errorf("max must be positive, got %d", max)
 	}
 	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
 	if err != nil {
@@ -46,7 +46,7 @@ func RandomName() (string, error) {
 	for i := 0; i < usernameLength; i++ {
 		idx, err := secureRandomInt(k)
 		if err != nil {
-			return "", fmt.Errorf("generating random name character: %w", err)
+			return "", fmt.Errorf("generating random name character at index %d: %w", i, err)
 		}
 		sb.WriteByte(alphabet[idx])
 	}
@@ -56,5 +56,9 @@ func RandomName() (string, error) {
 
 // RandomNumber generates a cryptographically secure random number in [0, 10)
 func RandomNumber() (int, error) {
-	return secureRandomInt(10)
+	n, err := secureRandomInt(10)
+	if err != nil {
+		return 0, fmt.Errorf("generating random number: %w", err)
+	}
+	return n, nil
 }
