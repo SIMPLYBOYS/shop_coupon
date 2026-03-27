@@ -21,10 +21,10 @@ type Response struct {
 	JSONRPC string `json:"jsonrpc"`
 	ID      any    `json:"id"`
 	Result  any    `json:"result,omitempty"`
-	Error   *Error `json:"error,omitempty"`
+	Error   *RPCError `json:"error,omitempty"`
 }
 
-type Error struct {
+type RPCError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 }
@@ -56,6 +56,9 @@ func main() {
 		default:
 			sendError(req.ID, -32601, "Method not found")
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		log.Fatalf("scanner error: %v", err)
 	}
 }
 
@@ -122,7 +125,7 @@ func handleToolCall(req Request) {
 		return
 	}
 	name, ok := toolArguments["name"].(string)
-	if !ok {
+	if !ok || name == "" {
 		sendError(req.ID, -32602, "missing or invalid 'name' argument")
 		return
 	}
@@ -149,7 +152,7 @@ func sendResult(id any, result any) {
 }
 
 func sendError(id any, code int, message string) {
-	resp := Response{JSONRPC: "2.0", ID: id, Error: &Error{Code: code, Message: message}}
+	resp := Response{JSONRPC: "2.0", ID: id, Error: &RPCError{Code: code, Message: message}}
 	sendJSON(resp)
 }
 
