@@ -31,6 +31,7 @@ type RPCError struct {
 
 // JSON-RPC error codes
 const (
+	ErrParseError     = -32700
 	ErrMethodNotFound = -32601
 	ErrInvalidParams  = -32602
 )
@@ -51,6 +52,7 @@ func main() {
 		var req Request
 		if err := json.Unmarshal(line, &req); err != nil {
 			log.Printf("Error unmarshaling request: %v", err)
+			sendError(nil, ErrParseError, "Parse error")
 			continue
 		}
 
