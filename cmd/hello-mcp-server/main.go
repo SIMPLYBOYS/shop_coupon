@@ -29,6 +29,18 @@ type RPCError struct {
 	Message string `json:"message"`
 }
 
+// JSON-RPC error codes
+const (
+	ErrMethodNotFound = -32601
+	ErrInvalidParams  = -32602
+)
+
+// ToolCallParams represents the parameters for a tools/call request
+type ToolCallParams struct {
+	Name      string         `json:"name"`
+	Arguments map[string]any `json:"arguments"`
+}
+
 func main() {
 	// MCP服务器通过标准输入/输出进行通信，所以我们需要一个扫描器来读取stdin
 	scanner := bufio.NewScanner(os.Stdin)
@@ -54,7 +66,7 @@ func main() {
 			// 客户端发送的初始化完成通知，无需响应
 			continue
 		default:
-			sendError(req.ID, -32601, "Method not found")
+			sendError(req.ID, ErrMethodNotFound, "Method not found")
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -103,30 +115,32 @@ func handleToolsList(req Request) {
 
 // handleToolCall负责处理工具的实际调用
 func handleToolCall(req Request) {
-	var params map[string]any
+	var params ToolCallParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
-		sendError(req.ID, -32602, "Invalid params")
+		sendError(req.ID, ErrInvalidParams, "Invalid params")
 		return
 	}
 
-	toolName, ok := params["name"].(string)
-	if !ok {
-		sendError(req.ID, -32602, "missing or invalid tool name")
+	if params.Name == "" {
+		sendError(req.ID, ErrInvalidParams, "missing or invalid tool name")
 		return
 	}
-	if toolName != "greet" {
-		sendError(req.ID, -32601, "Tool not found")
+	if params.Name != "greet" {
+		sendError(req.ID, ErrMethodNotFound, "Tool not found")
 		return
 	}
 
-	toolArguments, ok := params["arguments"].(map[string]any)
-	if !ok {
-		sendError(req.ID, -32602, "missing or invalid tool arguments")
+	if params.Arguments == nil {
+		sendError(req.ID, ErrInvalidParams, "missing or invalid tool arguments")
 		return
 	}
-	name, ok := toolArguments["name"].(string)
-	if !ok || name == "" {
-		sendError(req.ID, -32602, "missing or invalid 'name' argument")
+	name, ok := params.Arguments["name"].(string)
+	if !ok {
+		sendError(req.ID, ErrInvalidParams, "missing or invalid 'name' argument: expected string")
+		return
+	}
+	if name == "" {
+		sendError(req.ID, ErrInvalidParams, "'name' argument must not be empty")
 		return
 	}
 
