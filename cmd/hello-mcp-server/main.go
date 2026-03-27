@@ -126,7 +126,7 @@ func handleToolCall(req Request) {
 		return
 	}
 	if params.Name != "greet" {
-		sendError(req.ID, ErrMethodNotFound, "Tool not found")
+		sendError(req.ID, ErrInvalidParams, "Tool not found")
 		return
 	}
 
